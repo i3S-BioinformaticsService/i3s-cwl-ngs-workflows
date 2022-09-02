@@ -1,0 +1,3047 @@
+{
+    "cwlVersion": "v1.2",
+    "class": "Workflow",
+    "id": "rna_sequencing.star",
+    "doc": "This workflow aligns short reads from fastq files using STAR.\n",
+    "requirements": [
+        {
+            "class": "InlineJavascriptRequirement"
+        },
+        {
+            "class": "StepInputExpressionRequirement"
+        },
+        {
+            "class": "SubworkflowFeatureRequirement"
+        },
+        {
+            "class": "MultipleInputFeatureRequirement"
+        }
+    ],
+    "inputs": [
+        {
+            "type": {
+                "type": "record",
+                "fields": [
+                    {
+                        "type": "string",
+                        "name": "run_id"
+                    },
+                    {
+                        "type": {
+                            "type": "array",
+                            "items": "File"
+                        },
+                        "name": "files"
+                    }
+                ]
+            },
+            "id": "fastq_reads"
+        },
+        {
+            "type": "Directory",
+            "id": "genome_directory"
+        },
+        {
+            "type": "string",
+            "id": "sample_name"
+        },
+        {
+            "type": "string",
+            "id": "library"
+        },
+        {
+            "type": "string",
+            "id": "platform"
+        },
+        {
+            "type": "int",
+            "id": "n_threads"
+        },
+        {
+            "type": "File",
+            "id": "genome_gtf"
+        },
+        {
+            "type": "int",
+            "id": "stranded_data"
+        }
+    ],
+    "outputs": [
+        {
+            "label": "FastQC html report file from original raw reads",
+            "outputSource": "qc_trimming/fastqc_folder",
+            "type": "Directory",
+            "id": "fastqc_folder"
+        },
+        {
+            "label": "Sorted Genome (STAR)",
+            "outputSource": "alignment/aligned_MarkDup",
+            "type": "File",
+            "id": "genome_aligned"
+        },
+        {
+            "label": "Mapping Statistics",
+            "outputSource": "alignment/mapping_stats",
+            "type": "File",
+            "id": "mapping_stats"
+        },
+        {
+            "label": "Gene Counts",
+            "outputSource": "alignment/gene_counts",
+            "type": "File",
+            "id": "gene_counts"
+        },
+        {
+            "label": "Post-alignment QC reports",
+            "outputSource": "post_alignment_QC/alignQC",
+            "type": "Directory",
+            "id": "post_alignmentQC"
+        }
+    ],
+    "steps": [
+        {
+            "run": {
+                "cwlVersion": "v1.2",
+                "class": "Workflow",
+                "requirements": [
+                    {
+                        "class": "InlineJavascriptRequirement"
+                    },
+                    {
+                        "class": "StepInputExpressionRequirement"
+                    },
+                    {
+                        "class": "MultipleInputFeatureRequirement"
+                    },
+                    {
+                        "listing": [
+                            {
+                                "entry": "$({class: 'Directory', listing: []})",
+                                "entryname": "FastQC_results",
+                                "writable": true
+                            }
+                        ],
+                        "class": "InitialWorkDirRequirement"
+                    }
+                ],
+                "inputs": [
+                    {
+                        "type": {
+                            "type": "record",
+                            "fields": [
+                                {
+                                    "type": "string",
+                                    "name": "run_id"
+                                },
+                                {
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "name": "files"
+                                }
+                            ]
+                        },
+                        "id": "input_reads"
+                    },
+                    {
+                        "type": "int",
+                        "id": "qual_trim_cutoff"
+                    },
+                    {
+                        "type": "int",
+                        "id": "min_adapter_overlap"
+                    },
+                    {
+                        "type": "int",
+                        "id": "min_read_length"
+                    },
+                    {
+                        "type": "int",
+                        "id": "min_unpaired_read_rescue_length"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "string"
+                        ],
+                        "id": "poly"
+                    },
+                    {
+                        "type": "int",
+                        "id": "n_threads"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "doc": "Folder containing the quality control\nresults before and after trim_galore\n",
+                        "outputSource": "move_to_folder/outs",
+                        "type": "Directory",
+                        "id": "fastqc_folder"
+                    },
+                    {
+                        "outputSource": "trim_poly/fastq1_trimmed",
+                        "type": "File",
+                        "id": "fastq1_trimmed"
+                    },
+                    {
+                        "outputSource": "trim_poly/fastq2_trimmed",
+                        "type": [
+                            "null",
+                            "File"
+                        ],
+                        "id": "fastq2_trimmed"
+                    }
+                ],
+                "steps": [
+                    {
+                        "run": {
+                            "cwlVersion": "v1.0",
+                            "class": "CommandLineTool",
+                            "hints": {
+                                "DockerRequirement": {
+                                    "dockerPull": "pegi3s/fastqc"
+                                },
+                                "SoftwareRequirement": {
+                                    "packages": {
+                                        "fastqc": {
+                                            "specs": [
+                                                "http://identifiers.org/biotools/fastqc"
+                                            ],
+                                            "version": [
+                                                "0.11.9--hdfd78af_1",
+                                                "0.11.9"
+                                            ]
+                                        }
+                                    }
+                                }
+                            },
+                            "inputs": [
+                                {
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "inputBinding": {
+                                        "position": 50
+                                    },
+                                    "doc": "Input bam,sam,bam_mapped,sam_mapped or fastq file\n",
+                                    "id": "reads_file"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "enum",
+                                            "name": "format",
+                                            "symbols": [
+                                                "bam",
+                                                "sam",
+                                                "bam_mapped",
+                                                "sam_mapped",
+                                                "fastq"
+                                            ]
+                                        }
+                                    ],
+                                    "inputBinding": {
+                                        "position": 6,
+                                        "prefix": "--format"
+                                    },
+                                    "doc": "Bypasses the normal sequence file format detection and\nforces the program to use the specified format.  Valid\nformats are bam,sam,bam_mapped,sam_mapped and fastq\n",
+                                    "id": "format_enum"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 7,
+                                        "prefix": "--threads"
+                                    },
+                                    "doc": "Specifies the number of files which can be processed\nsimultaneously.  Each thread will be allocated 250MB of\nmemory so you shouldn't run more threads than your\navailable memory will cope with, and not more than\n6 threads on a 32 bit machine\n",
+                                    "id": "threads"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 8,
+                                        "prefix": "--contaminants"
+                                    },
+                                    "doc": "Specifies a non-default file which contains the list of\ncontaminants to screen overrepresented sequences against.\nThe file must contain sets of named contaminants in the\nform name[tab]sequence.  Lines prefixed with a hash will\nbe ignored.\n",
+                                    "id": "contaminants"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 9,
+                                        "prefix": "--adapters"
+                                    },
+                                    "doc": "Specifies a non-default file which contains the list of\nadapter sequences which will be explicity searched against\nthe library. The file must contain sets of named adapters\nin the form name[tab]sequence.  Lines prefixed with a hash\nwill be ignored.\n",
+                                    "id": "adapters"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 10,
+                                        "prefix": "--limits"
+                                    },
+                                    "doc": "Specifies a non-default file which contains a set of criteria\nwhich will be used to determine the warn/error limits for the\nvarious modules.  This file can also be used to selectively\nremove some modules from the output all together.  The format\nneeds to mirror the default limits.txt file found in the\nConfiguration folder.\n",
+                                    "id": "limits"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 11,
+                                        "prefix": "--kmers"
+                                    },
+                                    "doc": "Specifies the length of Kmer to look for in the Kmer content\nmodule. Specified Kmer length must be between 2 and 10. Default\nlength is 7 if not specified.\n",
+                                    "id": "kmers"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "boolean"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 13,
+                                        "prefix": "--casava"
+                                    },
+                                    "doc": "Files come from raw casava output. Files in the same sample\ngroup (differing only by the group number) will be analysed\nas a set rather than individually. Sequences with the filter\nflag set in the header will be excluded from the analysis.\nFiles must have the same names given to them by casava\n(including being gzipped and ending with .gz) otherwise they\nwon't be grouped together correctly.\n",
+                                    "id": "casava"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "boolean"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 14,
+                                        "prefix": "--nofilter"
+                                    },
+                                    "doc": "If running with --casava then don't remove read flagged by\ncasava as poor quality when performing the QC analysis.\n",
+                                    "id": "nofilter"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "boolean"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 15,
+                                        "prefix": "--nogroup"
+                                    },
+                                    "doc": "Disable grouping of bases for reads >50bp. All reports will\nshow data for every base in the read.  WARNING: Using this\noption will cause fastqc to crash and burn if you use it on\nreally long reads, and your plots may end up a ridiculous size.\nYou have been warned!\n",
+                                    "id": "hide_group"
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "outputBinding": {
+                                        "glob": "*.zip"
+                                    },
+                                    "id": "zipped_file"
+                                },
+                                {
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "outputBinding": {
+                                        "glob": "*.html"
+                                    },
+                                    "id": "html_file"
+                                },
+                                {
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "outputBinding": {
+                                        "glob": "*/summary.txt"
+                                    },
+                                    "id": "summary_file"
+                                }
+                            ],
+                            "baseCommand": [
+                                "--extract",
+                                "--outdir",
+                                "."
+                            ],
+                            "$namespaces": {
+                                "s": "http://schema.org/"
+                            },
+                            "$schemas": [
+                                "https://github.com/schemaorg/schemaorg/raw/main/data/releases/11.01/schemaorg-current-http.rdf"
+                            ],
+                            "doc": "Tool runs FastQC from Babraham Bioinformatics\n",
+                            "requirements": []
+                        },
+                        "label": "Run fastqc on raw reads",
+                        "in": [
+                            {
+                                "source": "input_reads",
+                                "valueFrom": "$(self.files)",
+                                "id": "reads_file"
+                            },
+                            {
+                                "source": "n_threads",
+                                "id": "threads"
+                            }
+                        ],
+                        "out": [
+                            "zipped_file",
+                            "html_file"
+                        ],
+                        "id": "fastqc"
+                    },
+                    {
+                        "run": {
+                            "cwlVersion": "v1.0",
+                            "class": "CommandLineTool",
+                            "doc": "Adaptor trimming of reads (single or paired end) in fastq format.\n",
+                            "requirements": [
+                                {
+                                    "class": "InlineJavascriptRequirement"
+                                }
+                            ],
+                            "hints": {
+                                "ResourceRequirement": {
+                                    "coresMin": 1,
+                                    "ramMin": 7000
+                                },
+                                "DockerRequirement": {
+                                    "dockerPull": "i3sbioinformaticsservice/trim_galore:0.6.7"
+                                }
+                            },
+                            "baseCommand": "trim_galore",
+                            "inputs": [
+                                {
+                                    "doc": "raw reads in fastq format; can be gzipped;\nif paired end, the file contains the first reads;\nif single end, the file contains all reads\n",
+                                    "type": "File",
+                                    "inputBinding": {
+                                        "position": 10
+                                    },
+                                    "id": "fastq1"
+                                },
+                                {
+                                    "doc": "(optional) raw reads in fastq format; can be gzipped;\nif paired end, the file contains the second reads;\nif single end, the file does not exist\n",
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 11
+                                    },
+                                    "id": "fastq2"
+                                },
+                                {
+                                    "doc": "Adapter sequence for first reads.\nif not specified, trim_galore will try to autodetect whether ...\n- Illumina universal adapter (AGATCGGAAGAGC)\n- Nextera adapter (CTGTCTCTTATA)\n- Illumina Small RNA 3' Adapter (TGGAATTCTCGG)\n... was used.\nYou can directly choose one of the above configurations\nby setting the string to \"illumina\", \"nextera\", or \"small_rna\".\n",
+                                    "type": [
+                                        "null",
+                                        "string"
+                                    ],
+                                    "id": "adapter1"
+                                },
+                                {
+                                    "doc": "Adapter sequence for second reads - only for paired end data.\nif not specified, trim_galore will try to autodetect whether ...\n- Illumina universal adapter (AGATCGGAAGAGC)\n- Nextera adapter (CTGTCTCTTATA)\n- Illumina Small RNA 3' Adapter (TGGAATTCTCGG)\n... was used.\nYou can directly choose one of the above configurations\nby setting the adapter1 string to \"illumina\", \"nextera\", or \"small_rna\".\n",
+                                    "type": [
+                                        "null",
+                                        "string"
+                                    ],
+                                    "id": "adapter2"
+                                },
+                                {
+                                    "doc": "trim all base with a phred score lower than this valueFrom",
+                                    "type": "int",
+                                    "default": 20,
+                                    "inputBinding": {
+                                        "prefix": "--quality",
+                                        "position": 1
+                                    },
+                                    "id": "qual_trim_cutoff"
+                                },
+                                {
+                                    "doc": "discard reads that get shorter than this value",
+                                    "type": "int",
+                                    "default": 20,
+                                    "inputBinding": {
+                                        "prefix": "--length",
+                                        "position": 1
+                                    },
+                                    "id": "min_read_length"
+                                },
+                                {
+                                    "doc": "if only one read of a pair passes the qc and adapter trimming,\nit needs at least this length to be rescued\n",
+                                    "type": "int",
+                                    "default": 35,
+                                    "id": "min_unpaired_read_rescue_length"
+                                },
+                                {
+                                    "doc": "minimum overlap with adapter seq in bp needed to trim",
+                                    "type": "int",
+                                    "default": 1,
+                                    "inputBinding": {
+                                        "prefix": "--stringency",
+                                        "position": 1
+                                    },
+                                    "id": "min_adapter_overlap"
+                                },
+                                {
+                                    "doc": "basename for output files, instead of deriving the filenames from the input files",
+                                    "type": [
+                                        "null",
+                                        "string"
+                                    ],
+                                    "inputBinding": {
+                                        "prefix": "--basename",
+                                        "position": 1
+                                    },
+                                    "id": "out_basename"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "boolean"
+                                    ],
+                                    "default": true,
+                                    "inputBinding": {
+                                        "prefix": "--fastqc_args",
+                                        "valueFrom": "\"--noextract\"",
+                                        "position": 1
+                                    },
+                                    "id": "run_fastqc"
+                                },
+                                {
+                                    "doc": "Number of compression threads",
+                                    "type": "int",
+                                    "default": 1,
+                                    "inputBinding": {
+                                        "prefix": "--cores",
+                                        "position": 1
+                                    },
+                                    "id": "n_threads"
+                                }
+                            ],
+                            "arguments": [
+                                {
+                                    "prefix": "--gzip",
+                                    "position": 1
+                                },
+                                {
+                                    "valueFrom": "${\n  if ( inputs.adapter1 == \"illumina\" ){ return \"--illumina\" }\n  else if ( inputs.adapter1 == \"nextera\" ){ return \"--nextera\" }\n  else if ( inputs.adapter1 == \"small_rna\" ){ return \"--small_rna\" }\n  else { return null }\n}\n",
+                                    "position": 1
+                                },
+                                {
+                                    "prefix": "--adapter",
+                                    "valueFrom": "${\n  if ( inputs.adapter1 != null && inputs.adapter1 != \"illumina\" && inputs.adapter1 != \"nextera\" && inputs.adapter1 != \"small_rna\" ){\n    return inputs.adapter1\n  } else {\n    return null\n  }\n}\n",
+                                    "position": 1
+                                },
+                                {
+                                    "prefix": "--adapter2",
+                                    "valueFrom": "${\n  if ( inputs.fastq2 != null && inputs.adapter2 != null && inputs.adapter1 != \"illumina\" && inputs.adapter1 != \"nextera\" && inputs.adapter1 != \"small_rna\" ){\n    return inputs.adapter2\n  } else {\n    return null\n  }\n}\n",
+                                    "position": 1
+                                },
+                                {
+                                    "valueFrom": "${\n  if ( inputs.fastq2 == null ){ return null }\n  else { return \"--paired\" }\n}\n",
+                                    "position": 1
+                                },
+                                {
+                                    "valueFrom": "${\n  if ( inputs.fastq2 == null ){ return null }\n  else { return \"--retain_unpaired\" }\n}\n",
+                                    "position": 1
+                                },
+                                {
+                                    "prefix": "--length_1",
+                                    "valueFrom": "${\n  if ( inputs.fastq2 == null ){ return null }\n  else { return inputs.min_unpaired_read_rescue_length }\n}\n",
+                                    "position": 1
+                                },
+                                {
+                                    "prefix": "--length_2",
+                                    "valueFrom": "${\n  if ( inputs.fastq2 == null ){ return null }\n  else { return inputs.min_unpaired_read_rescue_length }\n}\n",
+                                    "position": 1
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "type": "File",
+                                    "outputBinding": {
+                                        "glob": "${\n    if ( inputs.fastq2 == null  ){\n    \tif (inputs.out_basename == null ) { return \"*trimmed.fq*\" }\n        else { return inputs.out_basename+\"*trimmed.fq*\"; }\n    }\n    else {\n  \tif (inputs.out_basename == null ) { return \"*val_1.fq*\" }\n        else { return inputs.out_basename+\"*val_1.fq*\"; }\n        }\n  }\n"
+                                    },
+                                    "id": "fastq1_trimmed"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "outputBinding": {
+                                        "glob": "${\nif (inputs.out_basename == null ) { return \"*val_2.fq*\" }\nelse { return inputs.out_basename+\"*val_2.fq*\"; }\n}\n"
+                                    },
+                                    "id": "fastq2_trimmed"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "outputBinding": {
+                                        "glob": "*unpaired_1.fq*"
+                                    },
+                                    "id": "fastq1_trimmed_unpaired"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "outputBinding": {
+                                        "glob": "*unpaired_2.fq*"
+                                    },
+                                    "id": "fastq2_trimmed_unpaired"
+                                },
+                                {
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "outputBinding": {
+                                        "glob": "*trimming_report.txt"
+                                    },
+                                    "id": "trim_galore_log"
+                                },
+                                {
+                                    "doc": "html report of post-trimming fastqc",
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "outputBinding": {
+                                        "glob": "*fastqc.html"
+                                    },
+                                    "id": "trimmed_fastqc_html"
+                                },
+                                {
+                                    "doc": "all data of post-trimming fastqc e.g. figures",
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "outputBinding": {
+                                        "glob": "*fastqc.zip"
+                                    },
+                                    "id": "trimmed_fastqc_zip"
+                                }
+                            ]
+                        },
+                        "label": "Run trim_galore for adapter removal",
+                        "doc": "Remove adapter sequences from reads. The quality\ntrimming cutoff is set to zero to ensure that no\nreads are removed due to low quality. For DNA\nsequencing it has been observed that by not removing\nlow quality reads we can increase specificity. This\ndoes not increase false positives because\nlow quality reads with several mismatches will be discarded\nduring the alignement step. Since base quality is taken into\naccount during variant calling, by mantaining all reads we\nare not increasing the amount of false positive variants.\nMin adapter overlap is increased from 1 to 3 mimicking\ncutadapt and trimmomatic default values.\n",
+                        "in": [
+                            {
+                                "source": "qual_trim_cutoff",
+                                "id": "qual_trim_cutoff"
+                            },
+                            {
+                                "source": "min_read_length",
+                                "id": "min_adapter_overlap"
+                            },
+                            {
+                                "source": "min_read_length",
+                                "id": "min_read_length"
+                            },
+                            {
+                                "source": "min_unpaired_read_rescue_length",
+                                "id": "min_unpaired_read_rescue_length"
+                            },
+                            {
+                                "default": false,
+                                "id": "run_fastqc"
+                            },
+                            {
+                                "source": "n_threads",
+                                "id": "n_threads"
+                            },
+                            {
+                                "source": "input_reads",
+                                "valueFrom": "${ return self.run_id+\"_adapters\"}",
+                                "id": "out_basename"
+                            },
+                            {
+                                "source": "input_reads",
+                                "valueFrom": "${ return self.files[0] }",
+                                "id": "fastq1"
+                            },
+                            {
+                                "source": "input_reads",
+                                "valueFrom": "${\nif (self.files.length > 1) {\n\treturn self.files[1];\n}\nelse return null;\n}\n",
+                                "id": "fastq2"
+                            }
+                        ],
+                        "out": [
+                            "fastq1_trimmed",
+                            "fastq2_trimmed",
+                            "trim_galore_log"
+                        ],
+                        "id": "trim_adapters"
+                    },
+                    {
+                        "run": {
+                            "cwlVersion": "v1.0",
+                            "class": "CommandLineTool",
+                            "doc": "Adaptor trimming of reads (single or paired end) in fastq format.\n",
+                            "requirements": [
+                                {
+                                    "class": "InlineJavascriptRequirement"
+                                }
+                            ],
+                            "hints": {
+                                "ResourceRequirement": {
+                                    "coresMin": 1,
+                                    "ramMin": 7000
+                                },
+                                "DockerRequirement": {
+                                    "dockerPull": "i3sbioinformaticsservice/trim_galore:0.6.7"
+                                }
+                            },
+                            "baseCommand": "trim_galore",
+                            "inputs": [
+                                {
+                                    "doc": "raw reads in fastq format; can be gzipped;\nif paired end, the file contains the first reads;\nif single end, the file contains all reads\n",
+                                    "type": "File",
+                                    "inputBinding": {
+                                        "position": 10
+                                    },
+                                    "id": "fastq1"
+                                },
+                                {
+                                    "doc": "(optional) raw reads in fastq format; can be gzipped;\nif paired end, the file contains the second reads;\nif single end, the file does not exist\n",
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 11
+                                    },
+                                    "id": "fastq2"
+                                },
+                                {
+                                    "doc": "Adapter sequence for first reads.\nif not specified, trim_galore will try to autodetect whether ...\n- Illumina universal adapter (AGATCGGAAGAGC)\n- Nextera adapter (CTGTCTCTTATA)\n- Illumina Small RNA 3' Adapter (TGGAATTCTCGG)\n... was used.\nYou can directly choose one of the above configurations\nby setting the string to \"illumina\", \"nextera\", or \"small_rna\".\n",
+                                    "type": [
+                                        "null",
+                                        "string"
+                                    ],
+                                    "id": "adapter1"
+                                },
+                                {
+                                    "doc": "Adapter sequence for second reads - only for paired end data.\nif not specified, trim_galore will try to autodetect whether ...\n- Illumina universal adapter (AGATCGGAAGAGC)\n- Nextera adapter (CTGTCTCTTATA)\n- Illumina Small RNA 3' Adapter (TGGAATTCTCGG)\n... was used.\nYou can directly choose one of the above configurations\nby setting the adapter1 string to \"illumina\", \"nextera\", or \"small_rna\".\n",
+                                    "type": [
+                                        "null",
+                                        "string"
+                                    ],
+                                    "id": "adapter2"
+                                },
+                                {
+                                    "doc": "trim all base with a phred score lower than this valueFrom",
+                                    "type": "int",
+                                    "default": 20,
+                                    "inputBinding": {
+                                        "prefix": "--quality",
+                                        "position": 1
+                                    },
+                                    "id": "qual_trim_cutoff"
+                                },
+                                {
+                                    "doc": "discard reads that get shorter than this value",
+                                    "type": "int",
+                                    "default": 20,
+                                    "inputBinding": {
+                                        "prefix": "--length",
+                                        "position": 1
+                                    },
+                                    "id": "min_read_length"
+                                },
+                                {
+                                    "doc": "if only one read of a pair passes the qc and adapter trimming,\nit needs at least this length to be rescued\n",
+                                    "type": "int",
+                                    "default": 35,
+                                    "id": "min_unpaired_read_rescue_length"
+                                },
+                                {
+                                    "doc": "minimum overlap with adapter seq in bp needed to trim",
+                                    "type": "int",
+                                    "default": 1,
+                                    "inputBinding": {
+                                        "prefix": "--stringency",
+                                        "position": 1
+                                    },
+                                    "id": "min_adapter_overlap"
+                                },
+                                {
+                                    "doc": "basename for output files, instead of deriving the filenames from the input files",
+                                    "type": [
+                                        "null",
+                                        "string"
+                                    ],
+                                    "inputBinding": {
+                                        "prefix": "--basename",
+                                        "position": 1
+                                    },
+                                    "id": "out_basename"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "boolean"
+                                    ],
+                                    "default": true,
+                                    "inputBinding": {
+                                        "prefix": "--fastqc_args",
+                                        "valueFrom": "\"--noextract\"",
+                                        "position": 1
+                                    },
+                                    "id": "run_fastqc"
+                                },
+                                {
+                                    "doc": "Number of compression threads",
+                                    "type": "int",
+                                    "default": 1,
+                                    "inputBinding": {
+                                        "prefix": "--cores",
+                                        "position": 1
+                                    },
+                                    "id": "n_threads"
+                                }
+                            ],
+                            "arguments": [
+                                {
+                                    "prefix": "--gzip",
+                                    "position": 1
+                                },
+                                {
+                                    "valueFrom": "${\n  if ( inputs.adapter1 == \"illumina\" ){ return \"--illumina\" }\n  else if ( inputs.adapter1 == \"nextera\" ){ return \"--nextera\" }\n  else if ( inputs.adapter1 == \"small_rna\" ){ return \"--small_rna\" }\n  else { return null }\n}\n",
+                                    "position": 1
+                                },
+                                {
+                                    "prefix": "--adapter",
+                                    "valueFrom": "${\n  if ( inputs.adapter1 != null && inputs.adapter1 != \"illumina\" && inputs.adapter1 != \"nextera\" && inputs.adapter1 != \"small_rna\" ){\n    return inputs.adapter1\n  } else {\n    return null\n  }\n}\n",
+                                    "position": 1
+                                },
+                                {
+                                    "prefix": "--adapter2",
+                                    "valueFrom": "${\n  if ( inputs.fastq2 != null && inputs.adapter2 != null && inputs.adapter1 != \"illumina\" && inputs.adapter1 != \"nextera\" && inputs.adapter1 != \"small_rna\" ){\n    return inputs.adapter2\n  } else {\n    return null\n  }\n}\n",
+                                    "position": 1
+                                },
+                                {
+                                    "valueFrom": "${\n  if ( inputs.fastq2 == null ){ return null }\n  else { return \"--paired\" }\n}\n",
+                                    "position": 1
+                                },
+                                {
+                                    "valueFrom": "${\n  if ( inputs.fastq2 == null ){ return null }\n  else { return \"--retain_unpaired\" }\n}\n",
+                                    "position": 1
+                                },
+                                {
+                                    "prefix": "--length_1",
+                                    "valueFrom": "${\n  if ( inputs.fastq2 == null ){ return null }\n  else { return inputs.min_unpaired_read_rescue_length }\n}\n",
+                                    "position": 1
+                                },
+                                {
+                                    "prefix": "--length_2",
+                                    "valueFrom": "${\n  if ( inputs.fastq2 == null ){ return null }\n  else { return inputs.min_unpaired_read_rescue_length }\n}\n",
+                                    "position": 1
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "type": "File",
+                                    "outputBinding": {
+                                        "glob": "${\n    if ( inputs.fastq2 == null  ){\n    \tif (inputs.out_basename == null ) { return \"*trimmed.fq*\" }\n        else { return inputs.out_basename+\"*trimmed.fq*\"; }\n    }\n    else {\n  \tif (inputs.out_basename == null ) { return \"*val_1.fq*\" }\n        else { return inputs.out_basename+\"*val_1.fq*\"; }\n        }\n  }\n"
+                                    },
+                                    "id": "fastq1_trimmed"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "outputBinding": {
+                                        "glob": "${\nif (inputs.out_basename == null ) { return \"*val_2.fq*\" }\nelse { return inputs.out_basename+\"*val_2.fq*\"; }\n}\n"
+                                    },
+                                    "id": "fastq2_trimmed"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "outputBinding": {
+                                        "glob": "*unpaired_1.fq*"
+                                    },
+                                    "id": "fastq1_trimmed_unpaired"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "outputBinding": {
+                                        "glob": "*unpaired_2.fq*"
+                                    },
+                                    "id": "fastq2_trimmed_unpaired"
+                                },
+                                {
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "outputBinding": {
+                                        "glob": "*trimming_report.txt"
+                                    },
+                                    "id": "trim_galore_log"
+                                },
+                                {
+                                    "doc": "html report of post-trimming fastqc",
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "outputBinding": {
+                                        "glob": "*fastqc.html"
+                                    },
+                                    "id": "trimmed_fastqc_html"
+                                },
+                                {
+                                    "doc": "all data of post-trimming fastqc e.g. figures",
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "outputBinding": {
+                                        "glob": "*fastqc.zip"
+                                    },
+                                    "id": "trimmed_fastqc_zip"
+                                }
+                            ]
+                        },
+                        "label": "Run trim_galore to remove poly A reads",
+                        "doc": "This step is intented to remove polyA reads from fastq files.\nAlthough these reads do not align in theory in the genome, removal\nof these contaminants can increase the percentage of aligned reads,\nthus giving a more realistic overview of this statistic. Since trim_galore\ndoes not allow to perform simultaneously automatic adapter trimming and\npoly A removal, a second trim_galore step is required\n",
+                        "in": [
+                            {
+                                "source": "qual_trim_cutoff",
+                                "id": "qual_trim_cutoff"
+                            },
+                            {
+                                "source": "min_read_length",
+                                "id": "min_adapter_overlap"
+                            },
+                            {
+                                "source": "min_read_length",
+                                "id": "min_read_length"
+                            },
+                            {
+                                "source": "min_unpaired_read_rescue_length",
+                                "id": "min_unpaired_read_rescue_length"
+                            },
+                            {
+                                "default": true,
+                                "id": "run_fastqc"
+                            },
+                            {
+                                "source": "n_threads",
+                                "id": "n_threads"
+                            },
+                            {
+                                "source": "poly",
+                                "id": "adapter1"
+                            },
+                            {
+                                "source": "poly",
+                                "id": "adapter2"
+                            },
+                            {
+                                "source": "input_reads",
+                                "valueFrom": "${ return self.run_id+\"_adapters_poly\"}",
+                                "id": "out_basename"
+                            },
+                            {
+                                "source": "trim_adapters/fastq1_trimmed",
+                                "id": "fastq1"
+                            },
+                            {
+                                "source": "trim_adapters/fastq2_trimmed",
+                                "id": "fastq2"
+                            }
+                        ],
+                        "out": [
+                            "fastq1_trimmed",
+                            "fastq2_trimmed",
+                            "trim_galore_log",
+                            "trimmed_fastqc_html",
+                            "trimmed_fastqc_zip"
+                        ],
+                        "id": "trim_poly"
+                    },
+                    {
+                        "label": "move all to Fastqc reports to a folder",
+                        "run": {
+                            "class": "CommandLineTool",
+                            "inputs": [
+                                {
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "id": "item"
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "type": "Directory",
+                                    "outputBinding": {
+                                        "glob": "FastQC_results/"
+                                    },
+                                    "id": "outs"
+                                }
+                            ],
+                            "arguments": [
+                                {
+                                    "valueFrom": "cp",
+                                    "position": 1
+                                },
+                                {
+                                    "valueFrom": "$(inputs.item)",
+                                    "position": 2
+                                },
+                                {
+                                    "valueFrom": "FastQC_results/",
+                                    "position": 101
+                                }
+                            ],
+                            "requirements": []
+                        },
+                        "in": [
+                            {
+                                "source": [
+                                    "fastqc/html_file",
+                                    "fastqc/zipped_file",
+                                    "trim_adapters/trim_galore_log",
+                                    "trim_poly/trim_galore_log",
+                                    "trim_poly/trimmed_fastqc_html",
+                                    "trim_poly/trimmed_fastqc_zip"
+                                ],
+                                "linkMerge": "merge_flattened",
+                                "id": "item"
+                            }
+                        ],
+                        "out": [
+                            "outs"
+                        ],
+                        "id": "move_to_folder"
+                    }
+                ]
+            },
+            "label": "Fastq quality trimming",
+            "doc": "Performs fastqc of the raw reads and trimming of adapters. low quality reads\nand poly-a and poly-g reads will be also removed. Although star aligner performs\nshort read alignment and can cope with low quality reads, removal of low quality\nreads/bases can nonetheless increase quantification accuracy.\n",
+            "in": [
+                {
+                    "source": "fastq_reads",
+                    "id": "input_reads"
+                },
+                {
+                    "default": 20,
+                    "id": "qual_trim_cutoff"
+                },
+                {
+                    "default": 3,
+                    "id": "min_adapter_overlap"
+                },
+                {
+                    "default": 40,
+                    "id": "min_read_length"
+                },
+                {
+                    "source": "n_threads",
+                    "id": "n_threads"
+                },
+                {
+                    "default": 45,
+                    "id": "min_unpaired_read_rescue_length"
+                },
+                {
+                    "valueFrom": "AAAAAAAAAA",
+                    "id": "poly"
+                }
+            ],
+            "out": [
+                "fastqc_folder",
+                "fastq1_trimmed",
+                "fastq2_trimmed"
+            ],
+            "id": "qc_trimming"
+        },
+        {
+            "run": {
+                "cwlVersion": "v1.2",
+                "class": "Workflow",
+                "id": "STAR",
+                "doc": "This workflow aligns RNA-seq data using STAR aligner following recommended default settings\n",
+                "requirements": [
+                    {
+                        "class": "InlineJavascriptRequirement"
+                    },
+                    {
+                        "class": "StepInputExpressionRequirement"
+                    },
+                    {
+                        "class": "SubworkflowFeatureRequirement"
+                    }
+                ],
+                "inputs": [
+                    {
+                        "type": {
+                            "type": "array",
+                            "items": "File"
+                        },
+                        "id": "input_files"
+                    },
+                    {
+                        "type": "Directory",
+                        "id": "genome_directory"
+                    },
+                    {
+                        "type": "string",
+                        "id": "sample_name"
+                    },
+                    {
+                        "type": {
+                            "type": "array",
+                            "items": "string"
+                        },
+                        "id": "RGline"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "id": "n_threads"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "label": "aligned BAM Duplications Marked",
+                        "outputSource": "bam_index/bam_index",
+                        "type": "File",
+                        "id": "aligned_MarkDup"
+                    },
+                    {
+                        "label": "Alignment statistics",
+                        "outputSource": "alignment/mapping_stats",
+                        "type": [
+                            "null",
+                            "File"
+                        ],
+                        "id": "mapping_stats"
+                    },
+                    {
+                        "label": "Gene Counts",
+                        "outputSource": "alignment/gene_counts",
+                        "type": [
+                            "null",
+                            "File"
+                        ],
+                        "id": "gene_counts"
+                    }
+                ],
+                "steps": [
+                    {
+                        "run": {
+                            "cwlVersion": "v1.2",
+                            "class": "CommandLineTool",
+                            "doc": "Runs the splice-aware STAR aligner\n",
+                            "requirements": [
+                                {
+                                    "class": "InlineJavascriptRequirement"
+                                }
+                            ],
+                            "hints": [
+                                {
+                                    "class": "DockerRequirement",
+                                    "dockerPull": "i3sbioinformaticsservice/star:2.7.10a"
+                                }
+                            ],
+                            "baseCommand": [
+                                "STAR"
+                            ],
+                            "arguments": [
+                                {
+                                    "valueFrom": "alignReads",
+                                    "position": 1,
+                                    "prefix": "--runMode"
+                                }
+                            ],
+                            "inputs": [
+                                {
+                                    "doc": "Specifies path to the genome directory where genome indices were generated\n",
+                                    "type": "Directory",
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--genomeDir"
+                                    },
+                                    "id": "genomeDir"
+                                },
+                                {
+                                    "doc": "Path of the files containing the sequences to be mapped. STAR can process both\nFASTA and FASTQ files.\n",
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--readFilesIn"
+                                    },
+                                    "id": "readFilesIn"
+                                },
+                                {
+                                    "doc": "Number of threads to run STAR",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--runThreadN"
+                                    },
+                                    "id": "runThreadN"
+                                },
+                                {
+                                    "doc": "Mode of shared memory usage for the genome files\nLoadAndKeep    - load genome into shared and keep it in memory after num LoadAndRemove  - load genome into shared but remove it after run LoadAndExit    - load genome into shared memory and exit, keeping the genome\n                 in memory for future runs\nRemove         - do not map anything, just remove loaded genome from memory NoSharedMemory - do not use shared memory, each job will have its own private\n                 copy of the genome\n",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "enum",
+                                            "symbols": [
+                                                "LoadAndKeep",
+                                                "LoadAndRemove",
+                                                "LoadAndExit",
+                                                "NoSharedMemory"
+                                            ]
+                                        }
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--genomeLoad"
+                                    },
+                                    "id": "genomeLoad"
+                                },
+                                {
+                                    "doc": "input file type\n\nFastx   - FastA or FASTQ\nSAM SE  - SAM or BAM single end reads\nSAM PE  - SAM or BAM paired end reads\n\nfor BAM user --readFilesCommand samtools view\n",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "array",
+                                            "items": "string"
+                                        }
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--readFilesType"
+                                    },
+                                    "id": "readFilesType"
+                                },
+                                {
+                                    "doc": "Read manifest file to annotate with read group information.\n\nFor paired-end read:\n  read1 <tab> read2 <tab> read-group-line\n",
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--readFilesManifest"
+                                    },
+                                    "id": "readFilesManifest"
+                                },
+                                {
+                                    "doc": "Command line to execute for each of the input file\n",
+                                    "type": [
+                                        "null",
+                                        "string"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--readFilesCommand"
+                                    },
+                                    "id": "readFilesCommand"
+                                },
+                                {
+                                    "doc": "Change the name of the output filename\n",
+                                    "type": [
+                                        "null",
+                                        "string"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--outFileNamePrefix"
+                                    },
+                                    "id": "outFileNamePrefix"
+                                },
+                                {
+                                    "doc": "Output of unmapped and partially mapped reads in separate file(s)\n\nNone    - No output\nFastx   - output in separate fasta/fastq files\n",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "enum",
+                                            "symbols": [
+                                                "None",
+                                                "Fastx"
+                                            ]
+                                        }
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--outReadsUnmapped"
+                                    },
+                                    "id": "outReadsUnmapped"
+                                },
+                                {
+                                    "doc": "--outSAMtype BAM Unsorted output unsorted Aligned.out.bam file. This unsorted file can be directly used with downstream software such as HTseq, without the need of name sorting\n--outSAMtype BAM SortedByCoordinate output sorted by coordinate Aligned.sortedByCoord.out.bam\n--outSAMtype BAM Unsorted SortedByCoordinate output both unsorted and sorted files.\n",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "array",
+                                            "items": "string"
+                                        }
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--outSAMtype",
+                                        "shellQuote": false
+                                    },
+                                    "id": "outSAMtype"
+                                },
+                                {
+                                    "doc": "Generates XS strand attribute required by Cufflinks.\nPlease only use in unstranded data\n",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "enum",
+                                            "symbols": [
+                                                "None",
+                                                "intronMotif"
+                                            ]
+                                        }
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--outSAMstrandField"
+                                    },
+                                    "id": "outSAMstrandField"
+                                },
+                                {
+                                    "doc": "SAM attributes:\n  None : No SAM attributes\n  Standard : NH HI AS nM\n  All : NH HI AS nM NM MD jM jI MC ch\n",
+                                    "type": [
+                                        "null",
+                                        "string"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--outSAMattributes"
+                                    },
+                                    "id": "outSAMattributes"
+                                },
+                                {
+                                    "doc": "The number of multimaps is given by NHLi:Nmap field.\nHI attribute enumerates multiple alignments of a read starting\nwith 1. Setting this value to 0 may be required for compatibility\nwith downstream software such as cufflinks\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--outSAMattrIHstart"
+                                    },
+                                    "id": "outSAMattrIHstart"
+                                },
+                                {
+                                    "doc": "--outSAMunmapped Within output unmapped reads into SAM/BAM aligned.* file\n--outSAMunmapped Within KeepPairs record unmapped mate for eacg alignment and in case of unsorted output, keep it adjacent to its mapped mate\n--outSAMunmapped Fastx output unmapped reads into separate File(s), formatted the same way as input reads     \n",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "array",
+                                            "items": "string"
+                                        }
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--outSAMunmapped"
+                                    },
+                                    "id": "outSAMunmapped"
+                                },
+                                {
+                                    "doc": "Changes the default MAPQ=255 value for unique mappers. Changing this\nvalue maybe be required for compatibility with downstream tools such\nas GATK\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--outSAMmapqUnique"
+                                    },
+                                    "id": "outSAMmapqUnique"
+                                },
+                                {
+                                    "doc": "Read group line.\nThe first word contains the read group identifier and must start with \"ID:\"\n\nComma separated RG lines corresponds to different (comma separated) input\nfiles. Commas have to be surrounded by spaces\n\n--outSAMattrRGline ID:xxx , ID:zzz \u201dDS:z z\u201d , ID:yyy DS:yyyy\n",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "array",
+                                            "items": "string"
+                                        }
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--outSAMattrRGline"
+                                    },
+                                    "id": "outSAMattrRGline"
+                                },
+                                {
+                                    "doc": "set BAM compression level, -1= default compression (6?)\n0=no compression, 10 maximum compression\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--outBAMcompression"
+                                    },
+                                    "id": "outBAMcompression"
+                                },
+                                {
+                                    "doc": "set number of threads for BAM sorting. 0 will default to\nmin(6,-runThreadN)\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--outBAMsortingThreadN"
+                                    },
+                                    "id": "outBAMsortingThreadN"
+                                },
+                                {
+                                    "doc": "reduces the number of \"spurious\" junctions\n",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "enum",
+                                            "symbols": [
+                                                "Normal",
+                                                "BySJout"
+                                            ]
+                                        }
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--outFilterType"
+                                    },
+                                    "id": "outFilterType"
+                                },
+                                {
+                                    "doc": "max number of multiple alignments allowed for a read.\nif exceeded, the read is considered unmapped\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--outFilterMultimapNmax"
+                                    },
+                                    "id": "outFilterMultimapNmax"
+                                },
+                                {
+                                    "doc": "maximum number of mismatches per pair, large number switches off this filter\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--outFilterMismatchNmax"
+                                    },
+                                    "id": "outFilterMismatchNmax"
+                                },
+                                {
+                                    "doc": "max number of mismatches per pair relative to read length:\n  2x100b, max number of mistmatches id 0.04*200=8 for the paired read\n",
+                                    "type": [
+                                        "null",
+                                        "float"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--outFilterMismatchNoverReadLmax"
+                                    },
+                                    "id": "outFilterMismatchNoverReadLmax"
+                                },
+                                {
+                                    "doc": "Recommended to remove the non-canonical junctions for cufflinks\nNone                          - no filtering\nRemoveNoncanonical            - filter out alignments that contain non-canonical junction\nRemoveNoncanonicalUnannotated - filter out alignments that contain non-canonical unannotated junctions  \n",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "enum",
+                                            "symbols": [
+                                                "None",
+                                                "RemoveNoncanonical",
+                                                "RemoveNoncanonicalUnannotated"
+                                            ]
+                                        }
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--outFilterIntronMotifs"
+                                    },
+                                    "id": "outFilterIntronMotifs"
+                                },
+                                {
+                                    "doc": "Defines the search start point through the read - The read is split into pieces\nno longer than this value\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--seedSearchStartLmax"
+                                    },
+                                    "id": "seedSearchStartLmax"
+                                },
+                                {
+                                    "doc": "minimum intron size\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--alignIntronMin"
+                                    },
+                                    "id": "alignIntronMin"
+                                },
+                                {
+                                    "doc": "maximum intron size.\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--alignIntronMax"
+                                    },
+                                    "id": "alignIntronMax"
+                                },
+                                {
+                                    "doc": "maximum genomic distance between mates\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--alignMatesGapMax"
+                                    },
+                                    "id": "alignMatesGapMax"
+                                },
+                                {
+                                    "doc": "minimum overhand for unannotated junctions\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--alignSJoverhangMin"
+                                    },
+                                    "id": "alignSJoverhangMin"
+                                },
+                                {
+                                    "doc": "minimum overhand for annotated junctions",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--alignSJDBoverhangMin"
+                                    },
+                                    "id": "alignSJDBoverhangMin"
+                                },
+                                {
+                                    "doc": "Type of read ends alignment\n\nLocal               - Standard local alignment with soft-clipping allowed\nEndToEnd            - Force end-to-end read alignment, do not soft-clip\nExtend5pOfRead1     - fully extend only the 5p of the read1, all other ends: local alignment\nExtend5pOfReads12   - fully extend only the 5p of the both read1 and read2, all other ends: local alignment\n",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "enum",
+                                            "symbols": [
+                                                "Local",
+                                                "EndToEnd",
+                                                "Extend5pOfRead1",
+                                                "Extend5pOfReads12"
+                                            ]
+                                        }
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--alignEndsType"
+                                    },
+                                    "id": "alignEndsType"
+                                },
+                                {
+                                    "doc": "allow the soft-clipping of the alignments past the end of the chromosomes\n",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "enum",
+                                            "symbols": [
+                                                "Yes",
+                                                "No"
+                                            ]
+                                        }
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--alignSoftClipAtReferenceEnds"
+                                    },
+                                    "id": "alignSoftClipAtReferenceEnds"
+                                },
+                                {
+                                    "doc": "max number of loci anchors are allowd to map to\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--winAnchorMultimapNmax"
+                                    },
+                                    "id": "winAnchorMultimapNmax"
+                                },
+                                {
+                                    "doc": "Includes chimetic alignments in main alignment BAM file.\n\n--chimOutType SeparateSAMold\nSTAR will output normal alignments into Aligned.*sam/bam,\nand will output chimeric alignments into a separate file\nchimeric.out.sam\n\n--chimOutType WithinBAM\nStrongly recommended.\n\n--chimOutType Junctions\nBy default or using this flag, STAR will generate Chimeric.out.junction file\n",
+                                    "type": [
+                                        "null",
+                                        "string"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--chimOutType"
+                                    },
+                                    "id": "chimOutType"
+                                },
+                                {
+                                    "doc": "Switches on the detection of chimeric (fusion) alignments in\naddition to normal mapping. This value should be set to a positive\nvalue. --chimSegmentMin parameter controls the minimum mapped length\nof the two segments that is allowed. \n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--chimSegmentMin"
+                                    },
+                                    "id": "chimSegmentMin"
+                                },
+                                {
+                                    "doc": "--quantMode TranscriptomeSAM\nwill output alignments translated into transcript coordinates. The generated\nfile can be used in RSEM or eXpress\n\n--quantMode GeneCounts\nWith this option STAR will count the number of reads per gene while mapping.\nA read is counted if it overlaps (1nt or more) one and only one gene. Both\nends of the paired-end read are checked for overlaps\n\nWith --quantMode TranscriptomeSAM GeneCounts, and get both the\nAligned.toTranscriptome.out.bam and ReadsPerGene.out.tab outputs.\n",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "array",
+                                            "items": "string"
+                                        }
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--quantMode"
+                                    },
+                                    "id": "quantMode"
+                                },
+                                {
+                                    "doc": "--quantTranscriptomeBan Singleend\nThis flag allows insertions, deletions and soft-clips in the transcriptomic\nalignments, which can be used by some expression quantification software\nsuch as eXpress. By default, for RSEM compatibilty, this flag is turned off.\n",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "enum",
+                                            "symbols": [
+                                                "IndelSoftclipSingleend",
+                                                "Singleend"
+                                            ]
+                                        }
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--quantTranscriptomeBan"
+                                    },
+                                    "id": "quantTranscriptomeBan"
+                                },
+                                {
+                                    "doc": "--twopassMode Basic option. STAR will perform the 1st pass mapping, then it\nwill automatically extract junctions, insert them into the genome index, and,\nfinally, re-map all reads in the 2nd mapping pass.\n",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "enum",
+                                            "symbols": [
+                                                "None",
+                                                "Basic"
+                                            ]
+                                        }
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "--twopassMode"
+                                    },
+                                    "id": "twopassMode"
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "type": "File",
+                                    "outputBinding": {
+                                        "glob": "${\nvar p= (inputs.outFileNamePrefix) ? inputs.outFileNamePrefix: \"\";\nreturn p+\"Aligned.out.bam\";\n}\n"
+                                    },
+                                    "id": "genome_aligned"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "outputBinding": {
+                                        "glob": "${\nvar p= (inputs.outFileNamePrefix) ? inputs.outFileNamePrefix: \"\";\nreturn p+\"Aligned.toTranscriptome.out.bam\";\n}\n"
+                                    },
+                                    "id": "transcriptome_aligned"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "outputBinding": {
+                                        "loadContents": true,
+                                        "glob": "${\nvar p= (inputs.outFileNamePrefix) ? inputs.outFileNamePrefix: \"\";\nreturn p+\"Log.final.out\";\n}\n"
+                                    },
+                                    "id": "mapping_stats"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "outputBinding": {
+                                        "glob": "${\nvar p= (inputs.outFileNamePrefix) ? inputs.outFileNamePrefix: \"\";\nreturn p+\"ReadsPerGene.out.tab\";\n}\n"
+                                    },
+                                    "id": "gene_counts"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "outputBinding": {
+                                        "glob": "${\nvar p= (inputs.outFileNamePrefix) ? inputs.outFileNamePrefix: \"\";\nreturn p+\"Chimeric.out.junction\";\n}\n"
+                                    },
+                                    "id": "chimeric_reads"
+                                }
+                            ]
+                        },
+                        "label": "STAR-aligner",
+                        "in": [
+                            {
+                                "source": "genome_directory",
+                                "id": "genomeDir"
+                            },
+                            {
+                                "source": "input_files",
+                                "id": "readFilesIn"
+                            },
+                            {
+                                "source": "n_threads",
+                                "id": "runThreadN"
+                            },
+                            {
+                                "default": "zcat",
+                                "id": "readFilesCommand"
+                            },
+                            {
+                                "source": "sample_name",
+                                "id": "outFileNamePrefix"
+                            },
+                            {
+                                "default": [
+                                    "BAM",
+                                    "Unsorted"
+                                ],
+                                "id": "outSAMtype"
+                            },
+                            {
+                                "default": "All",
+                                "id": "outSAMattributes"
+                            },
+                            {
+                                "default": [
+                                    "Within",
+                                    "KeepPairs"
+                                ],
+                                "id": "outSAMunmapped"
+                            },
+                            {
+                                "source": "RGline",
+                                "valueFrom": "${\n  var id = \"ID:\"+self[0];\n  var sm = \"SM:\"+self[1];\n  var lb = \"LB:\"+self[2];\n  var pl = \"PL:\"+self[3];\n  return [id, sm, lb, pl];\n}\n",
+                                "id": "outSAMattrRGline"
+                            },
+                            {
+                                "default": "BySJout",
+                                "id": "outFilterType"
+                            },
+                            {
+                                "default": 20,
+                                "id": "outFilterMultimapNmax"
+                            },
+                            {
+                                "default": 8,
+                                "id": "alignSJoverhangMin"
+                            },
+                            {
+                                "default": 1,
+                                "id": "alignSJDBoverhangMin"
+                            },
+                            {
+                                "default": [
+                                    "GeneCounts"
+                                ],
+                                "id": "quantMode"
+                            },
+                            {
+                                "default": "Basic",
+                                "id": "twopassMode"
+                            }
+                        ],
+                        "out": [
+                            "genome_aligned",
+                            "mapping_stats",
+                            "gene_counts"
+                        ],
+                        "id": "alignment"
+                    },
+                    {
+                        "run": {
+                            "cwlVersion": "v1.0",
+                            "class": "CommandLineTool",
+                            "doc": "Sort a bam file by read names.",
+                            "requirements": [
+                                {
+                                    "class": "InlineJavascriptRequirement"
+                                }
+                            ],
+                            "hints": {
+                                "ResourceRequirement": {
+                                    "coresMin": 1,
+                                    "ramMin": 1240
+                                },
+                                "DockerRequirement": {
+                                    "dockerPull": "i3sbioinformaticsservice/biobambam2:2.0.180"
+                                }
+                            },
+                            "baseCommand": [
+                                "bamsormadup"
+                            ],
+                            "arguments": [
+                                {
+                                    "valueFrom": "$(inputs.threads)",
+                                    "separate": false,
+                                    "prefix": "threads="
+                                }
+                            ],
+                            "stdin": "$(inputs.input_file.path)",
+                            "inputs": [
+                                {
+                                    "doc": "Input file",
+                                    "type": "File",
+                                    "id": "input_file"
+                                },
+                                {
+                                    "doc": "Set compression level of the output BAM file",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "default": 6,
+                                    "inputBinding": {
+                                        "separate": false,
+                                        "prefix": "level="
+                                    },
+                                    "id": "compression_level"
+                                },
+                                {
+                                    "doc": "set the input file format",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "enum",
+                                            "symbols": [
+                                                "sam",
+                                                "bam"
+                                            ]
+                                        }
+                                    ],
+                                    "default": "bam",
+                                    "inputBinding": {
+                                        "separate": false,
+                                        "prefix": "inputformat="
+                                    },
+                                    "id": "input_format"
+                                },
+                                {
+                                    "doc": "Specify number of threads",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "default": 1,
+                                    "id": "threads"
+                                },
+                                {
+                                    "doc": "name of the metrics file for duplicate marking",
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "inputBinding": {
+                                        "separate": false,
+                                        "prefix": "M="
+                                    },
+                                    "id": "metrics_file"
+                                },
+                                {
+                                    "doc": "Set the sort order",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "enum",
+                                            "symbols": [
+                                                "coordinate",
+                                                "queryname"
+                                            ]
+                                        }
+                                    ],
+                                    "default": "coordinate",
+                                    "inputBinding": {
+                                        "separate": false,
+                                        "prefix": "SO="
+                                    },
+                                    "id": "sort_order"
+                                },
+                                {
+                                    "doc": "name of reference Fasta file when writing into CRAM format.",
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "inputBinding": {
+                                        "separate": false,
+                                        "prefix": "reference="
+                                    },
+                                    "id": "referece_file"
+                                },
+                                {
+                                    "doc": "Output format",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "enum",
+                                            "symbols": [
+                                                "sam",
+                                                "bam",
+                                                "cram"
+                                            ]
+                                        }
+                                    ],
+                                    "default": "bam",
+                                    "inputBinding": {
+                                        "separate": false,
+                                        "prefix": "outputformat="
+                                    },
+                                    "id": "output_format"
+                                }
+                            ],
+                            "stdout": "$(inputs.input_file.nameroot + \"_sortMrkdup.bam\")",
+                            "outputs": [
+                                {
+                                    "type": "stdout",
+                                    "id": "bam_srt_mrkdup"
+                                }
+                            ]
+                        },
+                        "label": "Sort by coordinate and Mark duplicates",
+                        "in": [
+                            {
+                                "source": "alignment/genome_aligned",
+                                "id": "input_file"
+                            },
+                            {
+                                "default": "bam",
+                                "id": "input_format"
+                            },
+                            {
+                                "source": "n_threads",
+                                "id": "threads"
+                            },
+                            {
+                                "default": "coordinate",
+                                "id": "sort_order"
+                            },
+                            {
+                                "default": "bam",
+                                "id": "output_format"
+                            }
+                        ],
+                        "out": [
+                            "bam_srt_mrkdup"
+                        ],
+                        "id": "sort_and_markdup"
+                    },
+                    {
+                        "run": {
+                            "cwlVersion": "v1.0",
+                            "class": "CommandLineTool",
+                            "doc": "Index a coordinate-sorted BGZIP-compressed SAM, BAM or CRAM file for fast random access",
+                            "requirements": [
+                                {
+                                    "class": "InlineJavascriptRequirement"
+                                },
+                                {
+                                    "listing": [
+                                        "$(inputs.input_file)"
+                                    ],
+                                    "class": "InitialWorkDirRequirement"
+                                }
+                            ],
+                            "hints": [
+                                {
+                                    "class": "DockerRequirement",
+                                    "dockerPull": "i3sbioinformaticsservice/samtools:1.15.1"
+                                }
+                            ],
+                            "baseCommand": [
+                                "samtools",
+                                "index"
+                            ],
+                            "arguments": [
+                                {
+                                    "valueFrom": "$(inputs.threads)",
+                                    "prefix": "-@"
+                                }
+                            ],
+                            "inputs": [
+                                {
+                                    "doc": "Input BAM file sorted by coordinate",
+                                    "type": "File",
+                                    "inputBinding": {
+                                        "position": 100
+                                    },
+                                    "id": "input_file"
+                                },
+                                {
+                                    "doc": "Generate BAI-format index for BAM files",
+                                    "type": [
+                                        "null",
+                                        "boolean"
+                                    ],
+                                    "default": true,
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-b"
+                                    },
+                                    "id": "bai"
+                                },
+                                {
+                                    "doc": "Generate CSI-format index for BAM files",
+                                    "type": [
+                                        "null",
+                                        "boolean"
+                                    ],
+                                    "default": false,
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-c"
+                                    },
+                                    "id": "csi"
+                                },
+                                {
+                                    "doc": "Set minimum interval size for csi indices",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 2,
+                                        "prefix": "-m"
+                                    },
+                                    "id": "min_interval_csi"
+                                },
+                                {
+                                    "doc": "Specify number of threads",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "default": 1,
+                                    "id": "threads"
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "type": "File",
+                                    "secondaryFiles": [
+                                        ".bai"
+                                    ],
+                                    "outputBinding": {
+                                        "glob": "$(inputs.input_file.basename)"
+                                    },
+                                    "id": "bam_index"
+                                }
+                            ]
+                        },
+                        "label": "Index BAM",
+                        "in": [
+                            {
+                                "source": "sort_and_markdup/bam_srt_mrkdup",
+                                "id": "input_file"
+                            },
+                            {
+                                "source": "n_threads",
+                                "id": "threads"
+                            }
+                        ],
+                        "out": [
+                            "bam_index"
+                        ],
+                        "id": "bam_index"
+                    }
+                ]
+            },
+            "label": "Alignment",
+            "in": [
+                {
+                    "source": [
+                        "qc_trimming/fastq1_trimmed",
+                        "qc_trimming/fastq2_trimmed"
+                    ],
+                    "linkMerge": "merge_flattened",
+                    "id": "input_files"
+                },
+                {
+                    "source": "genome_directory",
+                    "id": "genome_directory"
+                },
+                {
+                    "source": "sample_name",
+                    "id": "sample_name"
+                },
+                {
+                    "source": [
+                        "fastq_reads",
+                        "sample_name",
+                        "library",
+                        "platform"
+                    ],
+                    "valueFrom": "${return [self[0].run_id, self[1], self[2], self[3]];}\n",
+                    "id": "RGline"
+                },
+                {
+                    "source": "n_threads",
+                    "id": "n_threads"
+                }
+            ],
+            "out": [
+                "aligned_MarkDup",
+                "mapping_stats",
+                "gene_counts"
+            ],
+            "id": "alignment"
+        },
+        {
+            "run": {
+                "cwlVersion": "v1.2",
+                "class": "Workflow",
+                "id": "RNA-seq QC",
+                "doc": "Performs several QC analysis on the aligned RNAseq data\n",
+                "requirements": [
+                    {
+                        "class": "InlineJavascriptRequirement"
+                    },
+                    {
+                        "class": "StepInputExpressionRequirement"
+                    },
+                    {
+                        "class": "SubworkflowFeatureRequirement"
+                    },
+                    {
+                        "listing": [
+                            {
+                                "entry": "$({class: 'Directory', listing: []})",
+                                "entryname": "QC_alignment",
+                                "writable": true
+                            }
+                        ],
+                        "class": "InitialWorkDirRequirement"
+                    }
+                ],
+                "inputs": [
+                    {
+                        "type": "File",
+                        "secondaryFiles": [
+                            ".bai"
+                        ],
+                        "id": "alg_bam"
+                    },
+                    {
+                        "type": "File",
+                        "id": "genome_gtf"
+                    },
+                    {
+                        "type": "int",
+                        "id": "stranded_data"
+                    },
+                    {
+                        "type": "string",
+                        "id": "is_paired"
+                    },
+                    {
+                        "type": "int",
+                        "id": "n_threads"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "doc": "Folder containing the alignment QC data\n",
+                        "outputSource": "move_to_folder/outs",
+                        "type": "Directory",
+                        "id": "alignQC"
+                    }
+                ],
+                "steps": [
+                    {
+                        "run": {
+                            "cwlVersion": "v1.2",
+                            "class": "Workflow",
+                            "requirements": [
+                                {
+                                    "class": "StepInputExpressionRequirement"
+                                },
+                                {
+                                    "class": "SubworkflowFeatureRequirement"
+                                }
+                            ],
+                            "inputs": [
+                                {
+                                    "type": "File",
+                                    "id": "genome_gtf"
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "doc": "converted gtf into bed12\n",
+                                    "outputSource": "pred_bed/bed12",
+                                    "type": "File",
+                                    "id": "bed12"
+                                }
+                            ],
+                            "steps": [
+                                {
+                                    "run": {
+                                        "class": "CommandLineTool",
+                                        "hints": {
+                                            "DockerRequirement": {
+                                                "dockerPull": "i3sbioinformaticsservice/ucsc_scripts:435"
+                                            }
+                                        },
+                                        "inputs": [
+                                            {
+                                                "type": "File",
+                                                "id": "gtf_file"
+                                            }
+                                        ],
+                                        "outputs": [
+                                            {
+                                                "type": "File",
+                                                "outputBinding": {
+                                                    "glob": "$(inputs.gtf_file.nameroot).txt"
+                                                },
+                                                "id": "pred"
+                                            }
+                                        ],
+                                        "arguments": [
+                                            {
+                                                "valueFrom": "gtfToGenePred",
+                                                "position": 1
+                                            },
+                                            {
+                                                "valueFrom": "$(inputs.gtf_file)",
+                                                "position": 2
+                                            },
+                                            {
+                                                "valueFrom": "$(inputs.gtf_file.nameroot).txt",
+                                                "position": 3
+                                            }
+                                        ],
+                                        "requirements": []
+                                    },
+                                    "in": [
+                                        {
+                                            "source": "genome_gtf",
+                                            "id": "gtf_file"
+                                        }
+                                    ],
+                                    "out": [
+                                        "pred"
+                                    ],
+                                    "id": "gene_pred"
+                                },
+                                {
+                                    "run": {
+                                        "class": "CommandLineTool",
+                                        "hints": {
+                                            "DockerRequirement": {
+                                                "dockerPull": "i3sbioinformaticsservice/ucsc_scripts:435"
+                                            }
+                                        },
+                                        "inputs": [
+                                            {
+                                                "type": "File",
+                                                "id": "pred"
+                                            }
+                                        ],
+                                        "outputs": [
+                                            {
+                                                "type": "File",
+                                                "outputBinding": {
+                                                    "glob": "$(inputs.pred.nameroot).bed12"
+                                                },
+                                                "id": "bed12"
+                                            }
+                                        ],
+                                        "arguments": [
+                                            {
+                                                "valueFrom": "genePredToBed",
+                                                "position": 1
+                                            },
+                                            {
+                                                "valueFrom": "$(inputs.pred)",
+                                                "position": 2
+                                            },
+                                            {
+                                                "valueFrom": "$(inputs.pred.nameroot).bed12",
+                                                "position": 3
+                                            }
+                                        ],
+                                        "requirements": []
+                                    },
+                                    "in": [
+                                        {
+                                            "source": "gene_pred/pred",
+                                            "id": "pred"
+                                        }
+                                    ],
+                                    "out": [
+                                        "bed12"
+                                    ],
+                                    "id": "pred_bed"
+                                }
+                            ]
+                        },
+                        "label": "Convert GTF into bed12",
+                        "in": [
+                            {
+                                "source": "genome_gtf",
+                                "id": "genome_gtf"
+                            }
+                        ],
+                        "out": [
+                            "bed12"
+                        ],
+                        "id": "gtf_to_bed12"
+                    },
+                    {
+                        "run": {
+                            "cwlVersion": "v1.0",
+                            "class": "CommandLineTool",
+                            "hints": [
+                                {
+                                    "class": "DockerRequirement",
+                                    "dockerPull": "i3sbioinformaticsservice/rseqc"
+                                }
+                            ],
+                            "baseCommand": [
+                                "bam_stat.py"
+                            ],
+                            "inputs": [
+                                {
+                                    "doc": "Alignment file in BAM or SAM format\n",
+                                    "type": "File",
+                                    "secondaryFiles": [
+                                        ".bai"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-i"
+                                    },
+                                    "id": "input_file"
+                                },
+                                {
+                                    "doc": "Minimum mapping quality (phred scaled) to determine\n\"uniquely mapped\"\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "default": 30,
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-q"
+                                    },
+                                    "id": "map_qual"
+                                }
+                            ],
+                            "stdout": "$(inputs.input_file.nameroot).stats.txt",
+                            "outputs": [
+                                {
+                                    "type": "stdout",
+                                    "id": "bam_stat"
+                                }
+                            ],
+                            "requirements": []
+                        },
+                        "label": "Rseqc Bam statistics",
+                        "in": [
+                            {
+                                "source": "alg_bam",
+                                "id": "input_file"
+                            }
+                        ],
+                        "out": [
+                            "bam_stat"
+                        ],
+                        "id": "bam_stat"
+                    },
+                    {
+                        "run": {
+                            "cwlVersion": "v1.0",
+                            "class": "CommandLineTool",
+                            "hints": [
+                                {
+                                    "class": "DockerRequirement",
+                                    "dockerPull": "i3sbioinformaticsservice/rseqc"
+                                }
+                            ],
+                            "baseCommand": [
+                                "infer_experiment.py"
+                            ],
+                            "inputs": [
+                                {
+                                    "doc": "Input alignment file in SAM or BAM format\n",
+                                    "type": "File",
+                                    "secondaryFiles": [
+                                        ".bai"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-i"
+                                    },
+                                    "id": "input_file"
+                                },
+                                {
+                                    "doc": "Reference gene model in bed format.\n",
+                                    "type": "File",
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-r"
+                                    },
+                                    "id": "refgene_bed"
+                                },
+                                {
+                                    "doc": "Number of reads sampled from SAM/BAM file.\ndefault 200000\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-s"
+                                    },
+                                    "id": "sample_size"
+                                },
+                                {
+                                    "doc": "Minimum mapping quality (phred scaled) for an\nalignment to be considered as \"uniquely mapped\"\ndefault= 30\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-q"
+                                    },
+                                    "id": "map_qual"
+                                }
+                            ],
+                            "stdout": "$(inputs.input_file.nameroot).strandedness.txt",
+                            "outputs": [
+                                {
+                                    "type": "stdout",
+                                    "id": "infer_experiment"
+                                }
+                            ],
+                            "requirements": []
+                        },
+                        "label": "Rseqc infer experiment",
+                        "in": [
+                            {
+                                "source": "alg_bam",
+                                "id": "input_file"
+                            },
+                            {
+                                "source": "gtf_to_bed12/bed12",
+                                "id": "refgene_bed"
+                            }
+                        ],
+                        "out": [
+                            "infer_experiment"
+                        ],
+                        "id": "infer_experiment"
+                    },
+                    {
+                        "run": {
+                            "cwlVersion": "v1.0",
+                            "class": "CommandLineTool",
+                            "hints": [
+                                {
+                                    "class": "DockerRequirement",
+                                    "dockerPull": "i3sbioinformaticsservice/rseqc"
+                                }
+                            ],
+                            "baseCommand": [
+                                "junction_annotation.py"
+                            ],
+                            "inputs": [
+                                {
+                                    "doc": "Alignment file in BAM or SAM format\n",
+                                    "type": "File",
+                                    "secondaryFiles": [
+                                        ".bai"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-i"
+                                    },
+                                    "id": "input_file"
+                                },
+                                {
+                                    "doc": "Reference gene model in bed format. This file is\nbetter to be a pooled gene model as it will be used to\nannotate splicing junctions\n",
+                                    "type": "File",
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-r"
+                                    },
+                                    "id": "refgene_bed"
+                                },
+                                {
+                                    "doc": "prefix of output file(s).\n",
+                                    "type": "string",
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-o"
+                                    },
+                                    "id": "output_prefix"
+                                },
+                                {
+                                    "doc": "Minimum intron length (bp). [50]\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-m"
+                                    },
+                                    "id": "min_intron"
+                                },
+                                {
+                                    "doc": "Minimum mapping quality (phred scaled) for an alignment to\nbe considered as \"uniquely mapped\". [30]\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-q"
+                                    },
+                                    "id": "map_qual"
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "outputBinding": {
+                                        "glob": "$(inputs.output_prefix)*"
+                                    },
+                                    "id": "annotations"
+                                }
+                            ],
+                            "requirements": []
+                        },
+                        "label": "Rseqc annotate junctions",
+                        "in": [
+                            {
+                                "source": "alg_bam",
+                                "id": "input_file"
+                            },
+                            {
+                                "source": "gtf_to_bed12/bed12",
+                                "id": "refgene_bed"
+                            },
+                            {
+                                "source": "alg_bam",
+                                "valueFrom": "${ return self.nameroot; }",
+                                "id": "output_prefix"
+                            }
+                        ],
+                        "out": [
+                            "annotations"
+                        ],
+                        "id": "junction_annotation"
+                    },
+                    {
+                        "run": {
+                            "cwlVersion": "v1.0",
+                            "class": "CommandLineTool",
+                            "hints": [
+                                {
+                                    "class": "DockerRequirement",
+                                    "dockerPull": "i3sbioinformaticsservice/rseqc"
+                                }
+                            ],
+                            "baseCommand": [
+                                "junction_saturation.py"
+                            ],
+                            "inputs": [
+                                {
+                                    "doc": "Alignment file in BAM or SAM format\n",
+                                    "type": "File",
+                                    "secondaryFiles": [
+                                        ".bai"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-i"
+                                    },
+                                    "id": "input_file"
+                                },
+                                {
+                                    "doc": "Prefix of output file(s)\n",
+                                    "type": "string",
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-o"
+                                    },
+                                    "id": "output_prefix"
+                                },
+                                {
+                                    "doc": "Reference gene model in bed format. This gene mode is\nused to determine known splicing junctions.\n",
+                                    "type": "File",
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-r"
+                                    },
+                                    "id": "refgene_bed"
+                                },
+                                {
+                                    "doc": "Sampling starts from this percentile between 0 and 100. [5]\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-l"
+                                    },
+                                    "id": "percentile_low_bound"
+                                },
+                                {
+                                    "doc": "Sampling ends at this percentile between 0 and 100. [100]\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-u"
+                                    },
+                                    "id": "percentile_up_bound"
+                                },
+                                {
+                                    "doc": "Sampling frequency. Smaller value means more sampling times\nbetween 0 and 100. [5]\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-s"
+                                    },
+                                    "id": "percentile_step"
+                                },
+                                {
+                                    "doc": "Minimum number of intronic reads to call a junction. [1]\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-m"
+                                    },
+                                    "id": "min_intronsize"
+                                },
+                                {
+                                    "doc": "Minimum number of splicing reads to call a junction\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-v"
+                                    },
+                                    "id": "min_spliceread"
+                                },
+                                {
+                                    "doc": "Minimum mapping quality (phred scaler) for an alignment to\nbe called \"uniquely mapped\". [30]\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-q"
+                                    },
+                                    "id": "map_qual"
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "outputBinding": {
+                                        "glob": "$(inputs.output_prefix)*.pdf"
+                                    },
+                                    "id": "saturation"
+                                }
+                            ],
+                            "requirements": []
+                        },
+                        "label": "Rseqc junction saturation",
+                        "in": [
+                            {
+                                "source": "alg_bam",
+                                "id": "input_file"
+                            },
+                            {
+                                "source": "gtf_to_bed12/bed12",
+                                "id": "refgene_bed"
+                            },
+                            {
+                                "source": "alg_bam",
+                                "valueFrom": "${ return self.nameroot; }",
+                                "id": "output_prefix"
+                            }
+                        ],
+                        "out": [
+                            "saturation"
+                        ],
+                        "id": "junction_saturation"
+                    },
+                    {
+                        "run": {
+                            "cwlVersion": "v1.0",
+                            "class": "CommandLineTool",
+                            "hints": [
+                                {
+                                    "class": "DockerRequirement",
+                                    "dockerPull": "i3sbioinformaticsservice/rseqc"
+                                }
+                            ],
+                            "baseCommand": [
+                                "read_distribution.py"
+                            ],
+                            "inputs": [
+                                {
+                                    "doc": "Alignment file in BAM or SAM format\n",
+                                    "type": "File",
+                                    "secondaryFiles": [
+                                        ".bai"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-i"
+                                    },
+                                    "id": "input_file"
+                                },
+                                {
+                                    "doc": "Reference gene model in bed format.\n",
+                                    "type": "File",
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-r"
+                                    },
+                                    "id": "refgene_bed"
+                                }
+                            ],
+                            "stdout": "$(inputs.input_file.nameroot)_read_distribution.txt",
+                            "outputs": [
+                                {
+                                    "type": "stdout",
+                                    "id": "read_dist"
+                                }
+                            ],
+                            "requirements": []
+                        },
+                        "label": "Rseqc read distribution",
+                        "in": [
+                            {
+                                "source": "alg_bam",
+                                "id": "input_file"
+                            },
+                            {
+                                "source": "gtf_to_bed12/bed12",
+                                "id": "refgene_bed"
+                            }
+                        ],
+                        "out": [
+                            "read_dist"
+                        ],
+                        "id": "read_distribution"
+                    },
+                    {
+                        "run": {
+                            "cwlVersion": "v1.2",
+                            "class": "CommandLineTool",
+                            "doc": "Plots the dispersion of duplications of a given rna-seq sample. \n",
+                            "requirements": [
+                                {
+                                    "class": "InlineJavascriptRequirement"
+                                },
+                                {
+                                    "listing": [
+                                        "$(inputs.input_file)"
+                                    ],
+                                    "class": "InitialWorkDirRequirement"
+                                }
+                            ],
+                            "hints": {
+                                "DockerRequirement": {
+                                    "dockerPull": "i3sbioinformaticsservice/dupradar:1.26.1"
+                                }
+                            },
+                            "baseCommand": [
+                                "Rscript"
+                            ],
+                            "arguments": [
+                                "-e",
+                                {
+                                    "valueFrom": "${ return 'library(dupRadar); bamDuprm <- \"'+inputs.input_file.basename+'\"; gtf      <- \"'+inputs.gtf_file.path+'\"; stranded <- '+inputs.stranded_data+'; paired   <- '+inputs.is_paired+'; threads  <- '+inputs.n_threads+'; dm <- analyzeDuprates(bamDuprm,gtf,stranded,paired,threads); tiff(file=\"'+inputs.output_prefix+'_duplPlot.tiff\", res=300, width=2500, height=2500, units = \"px\"); duprateExpDensPlot(DupMat=dm); dev.off();' }\n"
+                                }
+                            ],
+                            "inputs": [
+                                {
+                                    "doc": "Input BAM file",
+                                    "type": "File",
+                                    "secondaryFiles": [
+                                        ".bai"
+                                    ],
+                                    "id": "input_file"
+                                },
+                                {
+                                    "doc": "Gtf file",
+                                    "type": "File",
+                                    "id": "gtf_file"
+                                },
+                                {
+                                    "doc": "Stranded data\n0 = Unstranded\n1 = Foward strand\n2 = Reverse strand\n",
+                                    "type": "int",
+                                    "id": "stranded_data"
+                                },
+                                {
+                                    "doc": "type of reads.\nTRUE for paired reads\nFALSE for single reads\n",
+                                    "type": "string",
+                                    "id": "is_paired"
+                                },
+                                {
+                                    "doc": "Number of threads\n",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "default": 1,
+                                    "id": "n_threads"
+                                },
+                                {
+                                    "doc": "Output prefix\n",
+                                    "type": "string",
+                                    "id": "output_prefix"
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "type": "File",
+                                    "outputBinding": {
+                                        "glob": "$(inputs.output_prefix)_duplPlot.tiff"
+                                    },
+                                    "id": "dupl_plot"
+                                }
+                            ]
+                        },
+                        "label": "Duplication analysis",
+                        "in": [
+                            {
+                                "source": "alg_bam",
+                                "id": "input_file"
+                            },
+                            {
+                                "source": "genome_gtf",
+                                "id": "gtf_file"
+                            },
+                            {
+                                "source": "stranded_data",
+                                "id": "stranded_data"
+                            },
+                            {
+                                "source": "is_paired",
+                                "id": "is_paired"
+                            },
+                            {
+                                "source": "n_threads",
+                                "id": "n_threads"
+                            },
+                            {
+                                "source": "alg_bam",
+                                "valueFrom": "${ return self.nameroot; }",
+                                "id": "output_prefix"
+                            }
+                        ],
+                        "out": [
+                            "dupl_plot"
+                        ],
+                        "id": "duplication_rate"
+                    },
+                    {
+                        "label": "move all to Fastqc reports to a folder",
+                        "run": {
+                            "class": "CommandLineTool",
+                            "inputs": [
+                                {
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "id": "item"
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "type": "Directory",
+                                    "outputBinding": {
+                                        "glob": "QC_alignment/"
+                                    },
+                                    "id": "outs"
+                                }
+                            ],
+                            "arguments": [
+                                {
+                                    "valueFrom": "cp",
+                                    "position": 1
+                                },
+                                {
+                                    "valueFrom": "$(inputs.item)",
+                                    "position": 2
+                                },
+                                {
+                                    "valueFrom": "QC_alignment/",
+                                    "position": 101
+                                }
+                            ],
+                            "requirements": []
+                        },
+                        "in": [
+                            {
+                                "source": [
+                                    "bam_stat/bam_stat",
+                                    "infer_experiment/infer_experiment",
+                                    "junction_annotation/annotations",
+                                    "junction_saturation/saturation",
+                                    "read_distribution/read_dist",
+                                    "duplication_rate/dupl_plot"
+                                ],
+                                "linkMerge": "merge_flattened",
+                                "id": "item"
+                            }
+                        ],
+                        "out": [
+                            "outs"
+                        ],
+                        "id": "move_to_folder"
+                    }
+                ]
+            },
+            "in": [
+                {
+                    "source": "alignment/aligned_MarkDup",
+                    "id": "alg_bam"
+                },
+                {
+                    "source": "genome_gtf",
+                    "id": "genome_gtf"
+                },
+                {
+                    "source": "stranded_data",
+                    "id": "stranded_data"
+                },
+                {
+                    "source": "qc_trimming/fastq2_trimmed",
+                    "valueFrom": "${ return (self) ? \"TRUE\" : \"FALSE\" }\n",
+                    "id": "is_paired"
+                },
+                {
+                    "source": "n_threads",
+                    "id": "n_threads"
+                }
+            ],
+            "out": [
+                "alignQC"
+            ],
+            "id": "post_alignment_QC"
+        }
+    ]
+}
