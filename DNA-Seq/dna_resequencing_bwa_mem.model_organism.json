@@ -1,0 +1,3170 @@
+{
+    "class": "Workflow",
+    "cwlVersion": "v1.2",
+    "id": "dna_resequencing_short_mem",
+    "doc": "This workflow aligns short reads from fastq files using the\nbwa mem algorithm. It first starts by indexing the reference\ngenome if such index does not exist, performs quality control\nstep of the raw reads and performs adapter trimming. Trimmed\nreads are then aligned, sorted by reads name and pair end reads\nare corrected using samtools fixmate. All this steps, with the\nexception of the indexing, are scattered. After the alignment\nof each run, these files are merged and then a post-processing\nstep takes place which includes duplicate marking and base\nquality recalibration (for model organisms)\n",
+    "requirements": [
+        {
+            "class": "SubworkflowFeatureRequirement"
+        },
+        {
+            "class": "ScatterFeatureRequirement"
+        },
+        {
+            "class": "StepInputExpressionRequirement"
+        },
+        {
+            "class": "InlineJavascriptRequirement"
+        }
+    ],
+    "inputs": [
+        {
+            "type": {
+                "type": "array",
+                "items": {
+                    "type": "record",
+                    "fields": [
+                        {
+                            "type": "string",
+                            "name": "run_id"
+                        },
+                        {
+                            "type": {
+                                "type": "array",
+                                "items": "File"
+                            },
+                            "name": "files"
+                        }
+                    ]
+                }
+            },
+            "id": "reads"
+        },
+        {
+            "type": "File",
+            "secondaryFiles": [
+                "^.dict",
+                ".fai",
+                ".amb",
+                ".ann",
+                ".bwt",
+                ".pac",
+                ".sa"
+            ],
+            "id": "genome_index"
+        },
+        {
+            "type": "string",
+            "id": "sample_name"
+        },
+        {
+            "type": "string",
+            "id": "library"
+        },
+        {
+            "type": "string",
+            "id": "platform"
+        },
+        {
+            "type": "File",
+            "id": "target_regions"
+        },
+        {
+            "type": [
+                "null",
+                "int"
+            ],
+            "id": "threads"
+        },
+        {
+            "type": {
+                "type": "array",
+                "items": "File"
+            },
+            "secondaryFiles": [
+                ".tbi"
+            ],
+            "id": "known_sites"
+        }
+    ],
+    "outputs": [
+        {
+            "label": "FastQC html report file from original raw reads",
+            "outputSource": "process_run/run_fastqc_folder",
+            "type": {
+                "type": "array",
+                "items": "Directory"
+            },
+            "id": "fastqc_folder"
+        },
+        {
+            "label": "BAM sorted by reads name from a sequencing run",
+            "outputSource": "apply_quality_score/recalibrated_bam",
+            "type": "File",
+            "id": "bam_postprocessed"
+        },
+        {
+            "label": "statistics file of the alignment",
+            "outputSource": "aln_quality_control/bam_samtools_stats",
+            "type": "File",
+            "id": "bam_samtools_stats"
+        },
+        {
+            "label": "statistics file of the alignment",
+            "outputSource": "aln_quality_control/bam_bamdst_stats",
+            "type": "Directory",
+            "id": "bam_bamdst_stats"
+        }
+    ],
+    "steps": [
+        {
+            "run": {
+                "class": "Workflow",
+                "cwlVersion": "v1.2",
+                "id": "scatters_alignment_runs_bwa_mem",
+                "doc": "This workflow scatters the alignment step of multiple runs\nof the same sample using the bwa mem algorithm. DNA alignemnt\nbest pratices dictate that indivual runs should be first alignment\nindividually and then merged into a single file prior to the\npost-alignment step which includes duplicate marking and base\nquality recalibration (for model organisms with a dbsnp).\n",
+                "label": "scatter short reads with bwa mem",
+                "requirements": [
+                    {
+                        "class": "InlineJavascriptRequirement"
+                    },
+                    {
+                        "class": "StepInputExpressionRequirement"
+                    },
+                    {
+                        "class": "MultipleInputFeatureRequirement"
+                    },
+                    {
+                        "listing": [
+                            {
+                                "entry": "$({class: 'Directory', listing: []})",
+                                "entryname": "FastQC_results",
+                                "writable": true
+                            }
+                        ],
+                        "class": "InitialWorkDirRequirement"
+                    },
+                    {
+                        "class": "SubworkflowFeatureRequirement"
+                    }
+                ],
+                "inputs": [
+                    {
+                        "type": {
+                            "type": "record",
+                            "fields": [
+                                {
+                                    "type": "string",
+                                    "name": "run_id"
+                                },
+                                {
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "name": "files"
+                                }
+                            ]
+                        },
+                        "id": "input_reads"
+                    },
+                    {
+                        "type": "File",
+                        "secondaryFiles": [
+                            ".fai",
+                            ".amb",
+                            ".ann",
+                            ".bwt",
+                            ".pac",
+                            ".sa"
+                        ],
+                        "id": "genome_index"
+                    },
+                    {
+                        "type": "string",
+                        "id": "run_sm"
+                    },
+                    {
+                        "type": "string",
+                        "id": "run_lb"
+                    },
+                    {
+                        "type": "string",
+                        "id": "run_pl"
+                    },
+                    {
+                        "type": "int",
+                        "id": "threads"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "doc": "Folder containing the quality control\nresults before and after trim_galore\n",
+                        "outputSource": "qc_trimming/fastqc_folder",
+                        "type": "Directory",
+                        "id": "run_fastqc_folder"
+                    },
+                    {
+                        "label": "BAM sorted by reads name from a sequencing run",
+                        "type": "File",
+                        "outputSource": [
+                            "alignment_paired/bam",
+                            "alignment_single/bam"
+                        ],
+                        "pickValue": "first_non_null",
+                        "id": "bam_run"
+                    }
+                ],
+                "steps": [
+                    {
+                        "run": {
+                            "cwlVersion": "v1.2",
+                            "class": "Workflow",
+                            "requirements": [
+                                {
+                                    "class": "InlineJavascriptRequirement"
+                                },
+                                {
+                                    "class": "StepInputExpressionRequirement"
+                                },
+                                {
+                                    "class": "MultipleInputFeatureRequirement"
+                                },
+                                {
+                                    "listing": [
+                                        {
+                                            "entry": "$({class: 'Directory', listing: []})",
+                                            "entryname": "FastQC_results",
+                                            "writable": true
+                                        }
+                                    ],
+                                    "class": "InitialWorkDirRequirement"
+                                }
+                            ],
+                            "inputs": [
+                                {
+                                    "type": {
+                                        "type": "record",
+                                        "fields": [
+                                            {
+                                                "type": "string",
+                                                "name": "run_id"
+                                            },
+                                            {
+                                                "type": {
+                                                    "type": "array",
+                                                    "items": "File"
+                                                },
+                                                "name": "files"
+                                            }
+                                        ]
+                                    },
+                                    "id": "input_reads"
+                                },
+                                {
+                                    "type": "int",
+                                    "id": "qual_trim_cutoff"
+                                },
+                                {
+                                    "type": "int",
+                                    "id": "min_adapter_overlap"
+                                },
+                                {
+                                    "type": "int",
+                                    "id": "threads"
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "doc": "Folder containing the quality control\nresults before and after trim_galore\n",
+                                    "outputSource": "move_to_folder/outs",
+                                    "type": "Directory",
+                                    "id": "fastqc_folder"
+                                },
+                                {
+                                    "outputSource": "trim_adapters/fastq1_trimmed",
+                                    "type": "File",
+                                    "id": "fastq1_trimmed"
+                                },
+                                {
+                                    "outputSource": "trim_adapters/fastq2_trimmed",
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "id": "fastq2_trimmed"
+                                }
+                            ],
+                            "steps": [
+                                {
+                                    "run": {
+                                        "cwlVersion": "v1.0",
+                                        "class": "CommandLineTool",
+                                        "hints": {
+                                            "DockerRequirement": {
+                                                "dockerPull": "pegi3s/fastqc"
+                                            },
+                                            "SoftwareRequirement": {
+                                                "packages": {
+                                                    "fastqc": {
+                                                        "specs": [
+                                                            "http://identifiers.org/biotools/fastqc"
+                                                        ],
+                                                        "version": [
+                                                            "0.11.9--hdfd78af_1",
+                                                            "0.11.9"
+                                                        ]
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "inputs": [
+                                            {
+                                                "type": {
+                                                    "type": "array",
+                                                    "items": "File"
+                                                },
+                                                "inputBinding": {
+                                                    "position": 50
+                                                },
+                                                "doc": "Input bam,sam,bam_mapped,sam_mapped or fastq file\n",
+                                                "id": "reads_file"
+                                            },
+                                            {
+                                                "type": [
+                                                    "null",
+                                                    {
+                                                        "type": "enum",
+                                                        "name": "format",
+                                                        "symbols": [
+                                                            "bam",
+                                                            "sam",
+                                                            "bam_mapped",
+                                                            "sam_mapped",
+                                                            "fastq"
+                                                        ]
+                                                    }
+                                                ],
+                                                "inputBinding": {
+                                                    "position": 6,
+                                                    "prefix": "--format"
+                                                },
+                                                "doc": "Bypasses the normal sequence file format detection and\nforces the program to use the specified format.  Valid\nformats are bam,sam,bam_mapped,sam_mapped and fastq\n",
+                                                "id": "format_enum"
+                                            },
+                                            {
+                                                "type": [
+                                                    "null",
+                                                    "int"
+                                                ],
+                                                "inputBinding": {
+                                                    "position": 7,
+                                                    "prefix": "--threads"
+                                                },
+                                                "doc": "Specifies the number of files which can be processed\nsimultaneously.  Each thread will be allocated 250MB of\nmemory so you shouldn't run more threads than your\navailable memory will cope with, and not more than\n6 threads on a 32 bit machine\n",
+                                                "id": "threads"
+                                            },
+                                            {
+                                                "type": [
+                                                    "null",
+                                                    "File"
+                                                ],
+                                                "inputBinding": {
+                                                    "position": 8,
+                                                    "prefix": "--contaminants"
+                                                },
+                                                "doc": "Specifies a non-default file which contains the list of\ncontaminants to screen overrepresented sequences against.\nThe file must contain sets of named contaminants in the\nform name[tab]sequence.  Lines prefixed with a hash will\nbe ignored.\n",
+                                                "id": "contaminants"
+                                            },
+                                            {
+                                                "type": [
+                                                    "null",
+                                                    "File"
+                                                ],
+                                                "inputBinding": {
+                                                    "position": 9,
+                                                    "prefix": "--adapters"
+                                                },
+                                                "doc": "Specifies a non-default file which contains the list of\nadapter sequences which will be explicity searched against\nthe library. The file must contain sets of named adapters\nin the form name[tab]sequence.  Lines prefixed with a hash\nwill be ignored.\n",
+                                                "id": "adapters"
+                                            },
+                                            {
+                                                "type": [
+                                                    "null",
+                                                    "File"
+                                                ],
+                                                "inputBinding": {
+                                                    "position": 10,
+                                                    "prefix": "--limits"
+                                                },
+                                                "doc": "Specifies a non-default file which contains a set of criteria\nwhich will be used to determine the warn/error limits for the\nvarious modules.  This file can also be used to selectively\nremove some modules from the output all together.  The format\nneeds to mirror the default limits.txt file found in the\nConfiguration folder.\n",
+                                                "id": "limits"
+                                            },
+                                            {
+                                                "type": [
+                                                    "null",
+                                                    "int"
+                                                ],
+                                                "inputBinding": {
+                                                    "position": 11,
+                                                    "prefix": "--kmers"
+                                                },
+                                                "doc": "Specifies the length of Kmer to look for in the Kmer content\nmodule. Specified Kmer length must be between 2 and 10. Default\nlength is 7 if not specified.\n",
+                                                "id": "kmers"
+                                            },
+                                            {
+                                                "type": [
+                                                    "null",
+                                                    "boolean"
+                                                ],
+                                                "inputBinding": {
+                                                    "position": 13,
+                                                    "prefix": "--casava"
+                                                },
+                                                "doc": "Files come from raw casava output. Files in the same sample\ngroup (differing only by the group number) will be analysed\nas a set rather than individually. Sequences with the filter\nflag set in the header will be excluded from the analysis.\nFiles must have the same names given to them by casava\n(including being gzipped and ending with .gz) otherwise they\nwon't be grouped together correctly.\n",
+                                                "id": "casava"
+                                            },
+                                            {
+                                                "type": [
+                                                    "null",
+                                                    "boolean"
+                                                ],
+                                                "inputBinding": {
+                                                    "position": 14,
+                                                    "prefix": "--nofilter"
+                                                },
+                                                "doc": "If running with --casava then don't remove read flagged by\ncasava as poor quality when performing the QC analysis.\n",
+                                                "id": "nofilter"
+                                            },
+                                            {
+                                                "type": [
+                                                    "null",
+                                                    "boolean"
+                                                ],
+                                                "inputBinding": {
+                                                    "position": 15,
+                                                    "prefix": "--nogroup"
+                                                },
+                                                "doc": "Disable grouping of bases for reads >50bp. All reports will\nshow data for every base in the read.  WARNING: Using this\noption will cause fastqc to crash and burn if you use it on\nreally long reads, and your plots may end up a ridiculous size.\nYou have been warned!\n",
+                                                "id": "hide_group"
+                                            }
+                                        ],
+                                        "outputs": [
+                                            {
+                                                "type": {
+                                                    "type": "array",
+                                                    "items": "File"
+                                                },
+                                                "outputBinding": {
+                                                    "glob": "*.zip"
+                                                },
+                                                "id": "zipped_file"
+                                            },
+                                            {
+                                                "type": {
+                                                    "type": "array",
+                                                    "items": "File"
+                                                },
+                                                "outputBinding": {
+                                                    "glob": "*.html"
+                                                },
+                                                "id": "html_file"
+                                            },
+                                            {
+                                                "type": {
+                                                    "type": "array",
+                                                    "items": "File"
+                                                },
+                                                "outputBinding": {
+                                                    "glob": "*/summary.txt"
+                                                },
+                                                "id": "summary_file"
+                                            }
+                                        ],
+                                        "baseCommand": [
+                                            "--extract",
+                                            "--outdir",
+                                            "."
+                                        ],
+                                        "$namespaces": {
+                                            "s": "http://schema.org/"
+                                        },
+                                        "$schemas": [
+                                            "https://github.com/schemaorg/schemaorg/raw/main/data/releases/11.01/schemaorg-current-http.rdf"
+                                        ],
+                                        "doc": "Tool runs FastQC from Babraham Bioinformatics\n",
+                                        "requirements": []
+                                    },
+                                    "label": "Run fastqc on raw reads",
+                                    "in": [
+                                        {
+                                            "source": "input_reads",
+                                            "valueFrom": "$(self.files)",
+                                            "id": "reads_file"
+                                        },
+                                        {
+                                            "source": "threads",
+                                            "id": "threads"
+                                        }
+                                    ],
+                                    "out": [
+                                        "zipped_file",
+                                        "html_file"
+                                    ],
+                                    "id": "fastqc"
+                                },
+                                {
+                                    "run": {
+                                        "cwlVersion": "v1.0",
+                                        "class": "CommandLineTool",
+                                        "doc": "Adaptor trimming of reads (single or paired end) in fastq format.\n",
+                                        "requirements": [
+                                            {
+                                                "class": "InlineJavascriptRequirement"
+                                            }
+                                        ],
+                                        "hints": {
+                                            "ResourceRequirement": {
+                                                "coresMin": 1,
+                                                "ramMin": 7000
+                                            },
+                                            "DockerRequirement": {
+                                                "dockerPull": "i3sbioinformaticsservice/trim_galore:0.6.7"
+                                            }
+                                        },
+                                        "baseCommand": "trim_galore",
+                                        "inputs": [
+                                            {
+                                                "doc": "raw reads in fastq format; can be gzipped;\nif paired end, the file contains the first reads;\nif single end, the file contains all reads\n",
+                                                "type": "File",
+                                                "inputBinding": {
+                                                    "position": 10
+                                                },
+                                                "id": "fastq1"
+                                            },
+                                            {
+                                                "doc": "(optional) raw reads in fastq format; can be gzipped;\nif paired end, the file contains the second reads;\nif single end, the file does not exist\n",
+                                                "type": [
+                                                    "null",
+                                                    "File"
+                                                ],
+                                                "inputBinding": {
+                                                    "position": 11
+                                                },
+                                                "id": "fastq2"
+                                            },
+                                            {
+                                                "doc": "Adapter sequence for first reads.\nif not specified, trim_galore will try to autodetect whether ...\n- Illumina universal adapter (AGATCGGAAGAGC)\n- Nextera adapter (CTGTCTCTTATA)\n- Illumina Small RNA 3' Adapter (TGGAATTCTCGG)\n... was used.\nYou can directly choose one of the above configurations\nby setting the string to \"illumina\", \"nextera\", or \"small_rna\".\n",
+                                                "type": [
+                                                    "null",
+                                                    "string"
+                                                ],
+                                                "id": "adapter1"
+                                            },
+                                            {
+                                                "doc": "Adapter sequence for second reads - only for paired end data.\nif not specified, trim_galore will try to autodetect whether ...\n- Illumina universal adapter (AGATCGGAAGAGC)\n- Nextera adapter (CTGTCTCTTATA)\n- Illumina Small RNA 3' Adapter (TGGAATTCTCGG)\n... was used.\nYou can directly choose one of the above configurations\nby setting the adapter1 string to \"illumina\", \"nextera\", or \"small_rna\".\n",
+                                                "type": [
+                                                    "null",
+                                                    "string"
+                                                ],
+                                                "id": "adapter2"
+                                            },
+                                            {
+                                                "doc": "trim all base with a phred score lower than this valueFrom",
+                                                "type": "int",
+                                                "default": 20,
+                                                "inputBinding": {
+                                                    "prefix": "--quality",
+                                                    "position": 1
+                                                },
+                                                "id": "qual_trim_cutoff"
+                                            },
+                                            {
+                                                "doc": "discard reads that get shorter than this value",
+                                                "type": "int",
+                                                "default": 20,
+                                                "inputBinding": {
+                                                    "prefix": "--length",
+                                                    "position": 1
+                                                },
+                                                "id": "min_read_length"
+                                            },
+                                            {
+                                                "doc": "if only one read of a pair passes the qc and adapter trimming,\nit needs at least this length to be rescued\n",
+                                                "type": "int",
+                                                "default": 35,
+                                                "id": "min_unpaired_read_rescue_length"
+                                            },
+                                            {
+                                                "doc": "minimum overlap with adapter seq in bp needed to trim",
+                                                "type": "int",
+                                                "default": 1,
+                                                "inputBinding": {
+                                                    "prefix": "--stringency",
+                                                    "position": 1
+                                                },
+                                                "id": "min_adapter_overlap"
+                                            },
+                                            {
+                                                "doc": "basename for output files, instead of deriving the filenames from the input files",
+                                                "type": [
+                                                    "null",
+                                                    "string"
+                                                ],
+                                                "inputBinding": {
+                                                    "prefix": "--basename",
+                                                    "position": 1
+                                                },
+                                                "id": "out_basename"
+                                            },
+                                            {
+                                                "type": [
+                                                    "null",
+                                                    "boolean"
+                                                ],
+                                                "default": true,
+                                                "inputBinding": {
+                                                    "prefix": "--fastqc_args",
+                                                    "valueFrom": "\"--noextract\"",
+                                                    "position": 1
+                                                },
+                                                "id": "run_fastqc"
+                                            },
+                                            {
+                                                "doc": "Number of compression threads",
+                                                "type": "int",
+                                                "default": 1,
+                                                "inputBinding": {
+                                                    "prefix": "--cores",
+                                                    "position": 1
+                                                },
+                                                "id": "n_threads"
+                                            }
+                                        ],
+                                        "arguments": [
+                                            {
+                                                "prefix": "--gzip",
+                                                "position": 1
+                                            },
+                                            {
+                                                "valueFrom": "${\n  if ( inputs.adapter1 == \"illumina\" ){ return \"--illumina\" }\n  else if ( inputs.adapter1 == \"nextera\" ){ return \"--nextera\" }\n  else if ( inputs.adapter1 == \"small_rna\" ){ return \"--small_rna\" }\n  else { return null }\n}\n",
+                                                "position": 1
+                                            },
+                                            {
+                                                "prefix": "--adapter",
+                                                "valueFrom": "${\n  if ( inputs.adapter1 != null && inputs.adapter1 != \"illumina\" && inputs.adapter1 != \"nextera\" && inputs.adapter1 != \"small_rna\" ){\n    return inputs.adapter1\n  } else {\n    return null\n  }\n}\n",
+                                                "position": 1
+                                            },
+                                            {
+                                                "prefix": "--adapter2",
+                                                "valueFrom": "${\n  if ( inputs.fastq2 != null && inputs.adapter2 != null && inputs.adapter1 != \"illumina\" && inputs.adapter1 != \"nextera\" && inputs.adapter1 != \"small_rna\" ){\n    return inputs.adapter2\n  } else {\n    return null\n  }\n}\n",
+                                                "position": 1
+                                            },
+                                            {
+                                                "valueFrom": "${\n  if ( inputs.fastq2 == null ){ return null }\n  else { return \"--paired\" }\n}\n",
+                                                "position": 1
+                                            },
+                                            {
+                                                "valueFrom": "${\n  if ( inputs.fastq2 == null ){ return null }\n  else { return \"--retain_unpaired\" }\n}\n",
+                                                "position": 1
+                                            },
+                                            {
+                                                "prefix": "--length_1",
+                                                "valueFrom": "${\n  if ( inputs.fastq2 == null ){ return null }\n  else { return inputs.min_unpaired_read_rescue_length }\n}\n",
+                                                "position": 1
+                                            },
+                                            {
+                                                "prefix": "--length_2",
+                                                "valueFrom": "${\n  if ( inputs.fastq2 == null ){ return null }\n  else { return inputs.min_unpaired_read_rescue_length }\n}\n",
+                                                "position": 1
+                                            }
+                                        ],
+                                        "outputs": [
+                                            {
+                                                "type": "File",
+                                                "outputBinding": {
+                                                    "glob": "${\n    if ( inputs.fastq2 == null  ){\n    \tif (inputs.out_basename == null ) { return \"*trimmed.fq*\" }\n        else { return inputs.out_basename+\"*trimmed.fq*\"; }\n    }\n    else {\n  \tif (inputs.out_basename == null ) { return \"*val_1.fq*\" }\n        else { return inputs.out_basename+\"*val_1.fq*\"; }\n        }\n  }\n"
+                                                },
+                                                "id": "fastq1_trimmed"
+                                            },
+                                            {
+                                                "type": [
+                                                    "null",
+                                                    "File"
+                                                ],
+                                                "outputBinding": {
+                                                    "glob": "${\nif (inputs.out_basename == null ) { return \"*val_2.fq*\" }\nelse { return inputs.out_basename+\"*val_2.fq*\"; }\n}\n"
+                                                },
+                                                "id": "fastq2_trimmed"
+                                            },
+                                            {
+                                                "type": [
+                                                    "null",
+                                                    "File"
+                                                ],
+                                                "outputBinding": {
+                                                    "glob": "*unpaired_1.fq*"
+                                                },
+                                                "id": "fastq1_trimmed_unpaired"
+                                            },
+                                            {
+                                                "type": [
+                                                    "null",
+                                                    "File"
+                                                ],
+                                                "outputBinding": {
+                                                    "glob": "*unpaired_2.fq*"
+                                                },
+                                                "id": "fastq2_trimmed_unpaired"
+                                            },
+                                            {
+                                                "type": {
+                                                    "type": "array",
+                                                    "items": "File"
+                                                },
+                                                "outputBinding": {
+                                                    "glob": "*trimming_report.txt"
+                                                },
+                                                "id": "trim_galore_log"
+                                            },
+                                            {
+                                                "doc": "html report of post-trimming fastqc",
+                                                "type": {
+                                                    "type": "array",
+                                                    "items": "File"
+                                                },
+                                                "outputBinding": {
+                                                    "glob": "*fastqc.html"
+                                                },
+                                                "id": "trimmed_fastqc_html"
+                                            },
+                                            {
+                                                "doc": "all data of post-trimming fastqc e.g. figures",
+                                                "type": {
+                                                    "type": "array",
+                                                    "items": "File"
+                                                },
+                                                "outputBinding": {
+                                                    "glob": "*fastqc.zip"
+                                                },
+                                                "id": "trimmed_fastqc_zip"
+                                            }
+                                        ]
+                                    },
+                                    "label": "Run trim_galore for adapter removal",
+                                    "doc": "Remove adapter sequences from reads. The quality\ntrimming cutoff is set to zero to ensure that no\nreads are removed due to low quality. For DNA\nsequencing it has been observed that by not removing\nlow quality reads we can increase specificity. This\ndoes not increase false positives because\nlow quality reads with several mismatches will be discarded\nduring the alignement step. Since base quality is taken into\naccount during variant calling, by mantaining all reads we\nare not increasing the amount of false positive variants.\nMin adapter overlap is increased from 1 to 3 mimicking\ncutadapt and trimmomatic default values.\n",
+                                    "in": [
+                                        {
+                                            "default": 0,
+                                            "id": "qual_trim_cutoff"
+                                        },
+                                        {
+                                            "default": 3,
+                                            "id": "min_adapter_overlap"
+                                        },
+                                        {
+                                            "source": "threads",
+                                            "id": "n_threads"
+                                        },
+                                        {
+                                            "source": "input_reads",
+                                            "valueFrom": "${ return self.files[0] }",
+                                            "id": "fastq1"
+                                        },
+                                        {
+                                            "source": "input_reads",
+                                            "valueFrom": "${\nif (self.files.length > 1) {\n\treturn self.files[1];\n}\nelse return null;\n}\n",
+                                            "id": "fastq2"
+                                        }
+                                    ],
+                                    "out": [
+                                        "fastq1_trimmed",
+                                        "fastq2_trimmed",
+                                        "trim_galore_log",
+                                        "trimmed_fastqc_html",
+                                        "trimmed_fastqc_zip"
+                                    ],
+                                    "id": "trim_adapters"
+                                },
+                                {
+                                    "label": "move all to Fastqc reports to a folder",
+                                    "run": {
+                                        "class": "CommandLineTool",
+                                        "inputs": [
+                                            {
+                                                "type": {
+                                                    "type": "array",
+                                                    "items": "File"
+                                                },
+                                                "id": "item"
+                                            }
+                                        ],
+                                        "outputs": [
+                                            {
+                                                "type": "Directory",
+                                                "outputBinding": {
+                                                    "glob": "FastQC_results/"
+                                                },
+                                                "id": "outs"
+                                            }
+                                        ],
+                                        "arguments": [
+                                            {
+                                                "valueFrom": "cp",
+                                                "position": 1
+                                            },
+                                            {
+                                                "valueFrom": "$(inputs.item)",
+                                                "position": 2
+                                            },
+                                            {
+                                                "valueFrom": "FastQC_results/",
+                                                "position": 101
+                                            }
+                                        ],
+                                        "requirements": []
+                                    },
+                                    "in": [
+                                        {
+                                            "source": [
+                                                "fastqc/html_file",
+                                                "fastqc/zipped_file",
+                                                "trim_adapters/trim_galore_log",
+                                                "trim_adapters/trimmed_fastqc_html",
+                                                "trim_adapters/trimmed_fastqc_zip"
+                                            ],
+                                            "linkMerge": "merge_flattened",
+                                            "id": "item"
+                                        }
+                                    ],
+                                    "out": [
+                                        "outs"
+                                    ],
+                                    "id": "move_to_folder"
+                                }
+                            ]
+                        },
+                        "label": "Run fastqc on raw reads and perform trimming",
+                        "in": [
+                            {
+                                "source": "input_reads",
+                                "id": "input_reads"
+                            },
+                            {
+                                "default": 0,
+                                "id": "qual_trim_cutoff"
+                            },
+                            {
+                                "default": 3,
+                                "id": "min_adapter_overlap"
+                            },
+                            {
+                                "source": "threads",
+                                "id": "threads"
+                            }
+                        ],
+                        "out": [
+                            "fastq1_trimmed",
+                            "fastq2_trimmed",
+                            "fastqc_folder"
+                        ],
+                        "id": "qc_trimming"
+                    },
+                    {
+                        "run": {
+                            "cwlVersion": "v1.2",
+                            "class": "CommandLineTool",
+                            "requirements": [
+                                {
+                                    "dockerPull": "i3sbioinformaticsservice/bwa-samtools",
+                                    "class": "DockerRequirement"
+                                },
+                                {
+                                    "class": "ShellCommandRequirement"
+                                },
+                                {
+                                    "class": "InlineJavascriptRequirement"
+                                }
+                            ],
+                            "hints": {
+                                "ResourceRequirement": {
+                                    "coresMin": "$(parseInt(inputs.n_threads))"
+                                }
+                            },
+                            "baseCommand": [
+                                "bwa",
+                                "mem"
+                            ],
+                            "inputs": [
+                                {
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "label": "Fastq files for index.",
+                                    "inputBinding": {
+                                        "position": 99
+                                    },
+                                    "id": "input_file"
+                                },
+                                {
+                                    "type": "File",
+                                    "label": "Reference genome",
+                                    "inputBinding": {
+                                        "position": 98
+                                    },
+                                    "secondaryFiles": [
+                                        ".fai",
+                                        ".amb",
+                                        ".ann",
+                                        ".bwt",
+                                        ".pac",
+                                        ".sa"
+                                    ],
+                                    "id": "reference"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "string"
+                                    ],
+                                    "label": "Complete read group header lines.",
+                                    "inputBinding": {
+                                        "position": 3,
+                                        "prefix": "-R"
+                                    },
+                                    "id": "readgroup_line"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "boolean"
+                                    ],
+                                    "label": "Mark shorter split hits as secondary (for Picard compatibility).",
+                                    "default": true,
+                                    "inputBinding": {
+                                        "position": 3,
+                                        "prefix": "-M"
+                                    },
+                                    "id": "mark_short_split"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "label": "Number of threads [1].",
+                                    "default": 1,
+                                    "inputBinding": {
+                                        "position": 3,
+                                        "prefix": "-t"
+                                    },
+                                    "id": "n_threads"
+                                },
+                                {
+                                    "doc": "If true, will sort by name, otherwise will sort by genomic position",
+                                    "type": "boolean",
+                                    "default": false,
+                                    "inputBinding": {
+                                        "position": 103,
+                                        "prefix": "-n"
+                                    },
+                                    "id": "by_name"
+                                },
+                                {
+                                    "doc": "Specify output format",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "enum",
+                                            "symbols": [
+                                                "SAM",
+                                                "BAM",
+                                                "CRAM"
+                                            ]
+                                        }
+                                    ],
+                                    "inputBinding": {
+                                        "position": 103,
+                                        "prefix": "-O"
+                                    },
+                                    "id": "out_format"
+                                },
+                                {
+                                    "doc": "Add template cigar ct tag",
+                                    "type": "boolean",
+                                    "default": false,
+                                    "inputBinding": {
+                                        "position": 203,
+                                        "prefix": "-c"
+                                    },
+                                    "id": "cigar_tag"
+                                },
+                                {
+                                    "doc": "Add mate score tag",
+                                    "type": "boolean",
+                                    "default": false,
+                                    "inputBinding": {
+                                        "position": 203,
+                                        "prefix": "-m"
+                                    },
+                                    "id": "add_mate_score"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "string"
+                                    ],
+                                    "doc": "add a specific name to the stream.",
+                                    "id": "out_filename"
+                                }
+                            ],
+                            "stdout": "$(inputs.out_filename)_fixmate_sort.bam",
+                            "outputs": [
+                                {
+                                    "type": "File",
+                                    "format": "edam:format_2572",
+                                    "label": "Alignments in BAM format",
+                                    "outputBinding": {
+                                        "glob": "*bam"
+                                    },
+                                    "id": "bam"
+                                }
+                            ],
+                            "arguments": [
+                                {
+                                    "shellQuote": false,
+                                    "position": 100,
+                                    "valueFrom": "|"
+                                },
+                                {
+                                    "valueFrom": "samtools",
+                                    "position": 101
+                                },
+                                {
+                                    "valueFrom": "sort",
+                                    "position": 102
+                                },
+                                {
+                                    "valueFrom": "-@",
+                                    "position": 196
+                                },
+                                {
+                                    "valueFrom": "$(inputs.n_threads)",
+                                    "position": 197
+                                },
+                                {
+                                    "shellQuote": false,
+                                    "position": 198,
+                                    "valueFrom": "-"
+                                },
+                                {
+                                    "shellQuote": false,
+                                    "position": 199,
+                                    "valueFrom": "|"
+                                },
+                                {
+                                    "valueFrom": "samtools",
+                                    "position": 201
+                                },
+                                {
+                                    "valueFrom": "fixmate",
+                                    "position": 202
+                                },
+                                {
+                                    "valueFrom": "-@",
+                                    "position": 296
+                                },
+                                {
+                                    "valueFrom": "$(inputs.n_threads)",
+                                    "position": 297
+                                },
+                                {
+                                    "shellQuote": false,
+                                    "position": 298,
+                                    "valueFrom": "-"
+                                },
+                                {
+                                    "shellQuote": false,
+                                    "position": 299,
+                                    "valueFrom": "-"
+                                },
+                                {
+                                    "shellQuote": false,
+                                    "position": 300,
+                                    "valueFrom": "|"
+                                },
+                                {
+                                    "valueFrom": "samtools",
+                                    "position": 301
+                                },
+                                {
+                                    "valueFrom": "sort",
+                                    "position": 302
+                                },
+                                {
+                                    "valueFrom": "-@",
+                                    "position": 396
+                                },
+                                {
+                                    "valueFrom": "$(inputs.n_threads)",
+                                    "position": 397
+                                },
+                                {
+                                    "shellQuote": false,
+                                    "position": 398,
+                                    "valueFrom": "-"
+                                }
+                            ],
+                            "$namespaces": {
+                                "s": "https://schema.org/",
+                                "edam": "http://edamontology.org/"
+                            }
+                        },
+                        "label": "bwa mem alignment",
+                        "in": [
+                            {
+                                "source": "threads",
+                                "valueFrom": "$(Math.round(self/4))",
+                                "id": "n_threads"
+                            },
+                            {
+                                "source": "input_reads",
+                                "valueFrom": "$(self.run_id)",
+                                "id": "out_filename"
+                            },
+                            {
+                                "source": [
+                                    "qc_trimming/fastq1_trimmed",
+                                    "qc_trimming/fastq2_trimmed"
+                                ],
+                                "valueFrom": "${\nif (self[1] == null) {\nreturn [ self[0] ];\n} else return self;\n}\n",
+                                "id": "input_file"
+                            },
+                            {
+                                "source": "genome_index",
+                                "id": "reference"
+                            },
+                            {
+                                "source": [
+                                    "input_reads",
+                                    "run_sm",
+                                    "run_lb",
+                                    "run_pl"
+                                ],
+                                "valueFrom": "@RG\\tID:$(self[0].run_id)\\tSM:$(self[1])\\tLB:$(self[2])\\tPL:$(self[3])",
+                                "id": "readgroup_line"
+                            },
+                            {
+                                "default": true,
+                                "id": "mark_short_split"
+                            },
+                            {
+                                "default": true,
+                                "id": "by_name"
+                            },
+                            {
+                                "default": "BAM",
+                                "id": "out_format"
+                            },
+                            {
+                                "default": true,
+                                "id": "cigar_tag"
+                            },
+                            {
+                                "default": true,
+                                "id": "add_mate_score"
+                            }
+                        ],
+                        "out": [
+                            "bam"
+                        ],
+                        "when": "$(inputs.input_file.length > 1)",
+                        "id": "alignment_paired"
+                    },
+                    {
+                        "run": {
+                            "cwlVersion": "v1.2",
+                            "class": "CommandLineTool",
+                            "requirements": [
+                                {
+                                    "dockerPull": "i3sbioinformaticsservice/bwa-samtools",
+                                    "class": "DockerRequirement"
+                                },
+                                {
+                                    "class": "ShellCommandRequirement"
+                                },
+                                {
+                                    "class": "InlineJavascriptRequirement"
+                                }
+                            ],
+                            "hints": {
+                                "ResourceRequirement": {
+                                    "coresMin": "$(parseInt(inputs.n_threads))"
+                                }
+                            },
+                            "baseCommand": [
+                                "bwa",
+                                "mem"
+                            ],
+                            "inputs": [
+                                {
+                                    "type": {
+                                        "type": "array",
+                                        "items": "File"
+                                    },
+                                    "label": "Fastq files for index.",
+                                    "inputBinding": {
+                                        "position": 99
+                                    },
+                                    "id": "input_file"
+                                },
+                                {
+                                    "type": "File",
+                                    "label": "Reference genome",
+                                    "inputBinding": {
+                                        "position": 98
+                                    },
+                                    "secondaryFiles": [
+                                        ".fai",
+                                        ".amb",
+                                        ".ann",
+                                        ".bwt",
+                                        ".pac",
+                                        ".sa"
+                                    ],
+                                    "id": "reference"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "string"
+                                    ],
+                                    "label": "Complete read group header lines.",
+                                    "inputBinding": {
+                                        "position": 3,
+                                        "prefix": "-R"
+                                    },
+                                    "id": "readgroup_line"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "boolean"
+                                    ],
+                                    "label": "Mark shorter split hits as secondary (for Picard compatibility).",
+                                    "default": true,
+                                    "inputBinding": {
+                                        "position": 3,
+                                        "prefix": "-M"
+                                    },
+                                    "id": "mark_short_split"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "label": "Number of threads [1].",
+                                    "default": 1,
+                                    "inputBinding": {
+                                        "position": 3,
+                                        "prefix": "-t"
+                                    },
+                                    "id": "n_threads"
+                                },
+                                {
+                                    "doc": "If true, will sort by name, otherwise will sort by genomic position",
+                                    "type": "boolean",
+                                    "default": false,
+                                    "inputBinding": {
+                                        "position": 103,
+                                        "prefix": "-n"
+                                    },
+                                    "id": "by_name"
+                                },
+                                {
+                                    "doc": "Specify output format",
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "enum",
+                                            "symbols": [
+                                                "SAM",
+                                                "BAM",
+                                                "CRAM"
+                                            ]
+                                        }
+                                    ],
+                                    "inputBinding": {
+                                        "position": 103,
+                                        "prefix": "-O"
+                                    },
+                                    "id": "out_format"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "string"
+                                    ],
+                                    "doc": "add a specific name to the stream.",
+                                    "id": "out_filename"
+                                }
+                            ],
+                            "stdout": "$(inputs.out_filename)_nsort_fixmate.bam",
+                            "outputs": [
+                                {
+                                    "type": "File",
+                                    "format": "edam:format_2572",
+                                    "label": "Alignments in BAM format",
+                                    "outputBinding": {
+                                        "glob": "*bam"
+                                    },
+                                    "id": "bam"
+                                }
+                            ],
+                            "arguments": [
+                                {
+                                    "shellQuote": false,
+                                    "position": 100,
+                                    "valueFrom": "|"
+                                },
+                                {
+                                    "valueFrom": "samtools",
+                                    "position": 101
+                                },
+                                {
+                                    "valueFrom": "sort",
+                                    "position": 102
+                                },
+                                {
+                                    "valueFrom": "-@",
+                                    "position": 196
+                                },
+                                {
+                                    "valueFrom": "$(inputs.n_threads)",
+                                    "position": 197
+                                },
+                                {
+                                    "shellQuote": false,
+                                    "position": 198,
+                                    "valueFrom": "-"
+                                }
+                            ],
+                            "$namespaces": {
+                                "s": "https://schema.org/",
+                                "edam": "http://edamontology.org/"
+                            }
+                        },
+                        "label": "bwa mem alignment",
+                        "in": [
+                            {
+                                "source": "threads",
+                                "valueFrom": "$(Math.round(self/2))",
+                                "id": "n_threads"
+                            },
+                            {
+                                "source": "input_reads",
+                                "valueFrom": "$(self.run_id)",
+                                "id": "out_filename"
+                            },
+                            {
+                                "source": [
+                                    "qc_trimming/fastq1_trimmed",
+                                    "qc_trimming/fastq2_trimmed"
+                                ],
+                                "valueFrom": "${\nif (self[1] == null) {\nreturn [ self[0] ];\n} else return self;\n}\n",
+                                "id": "input_file"
+                            },
+                            {
+                                "source": "genome_index",
+                                "id": "reference"
+                            },
+                            {
+                                "source": [
+                                    "input_reads",
+                                    "run_sm",
+                                    "run_lb",
+                                    "run_pl"
+                                ],
+                                "valueFrom": "@RG\\tID:$(self[0].run_id)\\tSM:$(self[1])\\tLB:$(self[2])\\tPL:$(self[3])",
+                                "id": "readgroup_line"
+                            },
+                            {
+                                "default": true,
+                                "id": "mark_short_split"
+                            },
+                            {
+                                "default": false,
+                                "id": "by_name"
+                            },
+                            {
+                                "default": "BAM",
+                                "id": "out_format"
+                            },
+                            {
+                                "default": true,
+                                "id": "cigar_tag"
+                            },
+                            {
+                                "default": true,
+                                "id": "add_mate_score"
+                            }
+                        ],
+                        "out": [
+                            "bam"
+                        ],
+                        "when": "$(inputs.input_file.length == 1)",
+                        "id": "alignment_single"
+                    }
+                ]
+            },
+            "label": "QC and alignment of each invidual run of a sample",
+            "scatter": "input_reads",
+            "in": [
+                {
+                    "source": "reads",
+                    "id": "input_reads"
+                },
+                {
+                    "source": "genome_index",
+                    "id": "genome_index"
+                },
+                {
+                    "source": "sample_name",
+                    "id": "run_sm"
+                },
+                {
+                    "source": "library",
+                    "id": "run_lb"
+                },
+                {
+                    "source": "platform",
+                    "id": "run_pl"
+                },
+                {
+                    "source": "threads",
+                    "id": "threads"
+                }
+            ],
+            "out": [
+                "run_fastqc_folder",
+                "bam_run"
+            ],
+            "id": "process_run"
+        },
+        {
+            "run": {
+                "cwlVersion": "v1.0",
+                "class": "CommandLineTool",
+                "doc": "Merge BAM files from different runs of the same samples.",
+                "requirements": [
+                    {
+                        "class": "InlineJavascriptRequirement"
+                    }
+                ],
+                "hints": [
+                    {
+                        "class": "DockerRequirement",
+                        "dockerPull": "i3sbioinformaticsservice/samtools:1.15.1"
+                    }
+                ],
+                "baseCommand": [
+                    "samtools",
+                    "merge"
+                ],
+                "arguments": [
+                    {
+                        "valueFrom": "$(inputs.threads)",
+                        "prefix": "-@"
+                    }
+                ],
+                "inputs": [
+                    {
+                        "doc": "aligned reads to be checked in sam or bam format",
+                        "type": {
+                            "type": "array",
+                            "items": "File"
+                        },
+                        "inputBinding": {
+                            "position": 100
+                        },
+                        "id": "bam_files"
+                    },
+                    {
+                        "doc": "Input files are sorted by read name",
+                        "type": "boolean",
+                        "default": false,
+                        "inputBinding": {
+                            "position": 1,
+                            "prefix": "-n"
+                        },
+                        "id": "by_name"
+                    },
+                    {
+                        "doc": "input files are sorted by TAG value",
+                        "type": [
+                            "null",
+                            "string"
+                        ],
+                        "inputBinding": {
+                            "position": 1,
+                            "prefix": "-t"
+                        },
+                        "id": "by_tag"
+                    },
+                    {
+                        "doc": "Attach RG tag (inferred from file names)",
+                        "type": "boolean",
+                        "default": false,
+                        "inputBinding": {
+                            "position": 1,
+                            "prefix": "-r"
+                        },
+                        "id": "attach_RG"
+                    },
+                    {
+                        "doc": "Uncompressed BAM output",
+                        "type": "boolean",
+                        "default": false,
+                        "inputBinding": {
+                            "position": 1,
+                            "prefix": "-u"
+                        },
+                        "id": "uncompressed"
+                    },
+                    {
+                        "doc": "Specify output file via option instead of <out.bam> argument",
+                        "type": [
+                            "null",
+                            "string"
+                        ],
+                        "inputBinding": {
+                            "position": 99,
+                            "prefix": "-o",
+                            "valueFrom": "$(self + \"_merged.bam\")"
+                        },
+                        "id": "output_name"
+                    },
+                    {
+                        "doc": "Compression level, from 0 to 9, default -1",
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "inputBinding": {
+                            "position": 1,
+                            "prefix": "-l"
+                        },
+                        "id": "compression_level"
+                    },
+                    {
+                        "doc": "Merge file in the specified region STR",
+                        "type": [
+                            "null",
+                            "string"
+                        ],
+                        "inputBinding": {
+                            "position": 1,
+                            "prefix": "-R"
+                        },
+                        "id": "merge_in_region"
+                    },
+                    {
+                        "doc": "Combine @RG headers with colliding IDS",
+                        "type": "boolean",
+                        "default": false,
+                        "inputBinding": {
+                            "position": 1,
+                            "prefix": "-c"
+                        },
+                        "id": "combine_rg_header"
+                    },
+                    {
+                        "doc": "Combine @PG headers with colliding IDs",
+                        "type": "boolean",
+                        "default": false,
+                        "inputBinding": {
+                            "position": 1,
+                            "prefix": "-p"
+                        },
+                        "id": "combine_pg_header"
+                    },
+                    {
+                        "doc": "List of input BAM filename, one per line",
+                        "type": [
+                            "null",
+                            "File"
+                        ],
+                        "inputBinding": {
+                            "position": 1,
+                            "prefix": "-b"
+                        },
+                        "id": "list_bam_files"
+                    },
+                    {
+                        "doc": "Specify a BED file for multiple region filtering",
+                        "type": [
+                            "null",
+                            "File"
+                        ],
+                        "inputBinding": {
+                            "position": 1,
+                            "prefix": "-L"
+                        },
+                        "id": "bed_region"
+                    },
+                    {
+                        "doc": "Specify number of threads",
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "default": 1,
+                        "id": "threads"
+                    },
+                    {
+                        "doc": "Specify output format",
+                        "type": [
+                            "null",
+                            {
+                                "type": "enum",
+                                "symbols": [
+                                    "SAM",
+                                    "BAM",
+                                    "CRAM"
+                                ]
+                            }
+                        ],
+                        "inputBinding": {
+                            "position": 2,
+                            "prefix": "-O"
+                        },
+                        "id": "out_format"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "type": "File",
+                        "outputBinding": {
+                            "glob": "${\nreturn (inputs.output_name) ?\n  inputs.output_name + \"_merged.bam\" :\n  inputs.bam_unsorted.nameroot + \"_merged.bam\";\n}\n"
+                        },
+                        "id": "bam_merged"
+                    }
+                ]
+            },
+            "label": "Merge all aligned runs",
+            "in": [
+                {
+                    "source": "process_run/bam_run",
+                    "id": "bam_files"
+                },
+                {
+                    "default": false,
+                    "id": "by_name"
+                },
+                {
+                    "source": "sample_name",
+                    "id": "output_name"
+                },
+                {
+                    "default": "BAM",
+                    "id": "out_format"
+                },
+                {
+                    "source": "threads",
+                    "id": "threads"
+                }
+            ],
+            "out": [
+                "bam_merged"
+            ],
+            "id": "merge_runs"
+        },
+        {
+            "run": {
+                "cwlVersion": "v1.0",
+                "class": "CommandLineTool",
+                "doc": "Sort a bam file by read names.",
+                "requirements": [
+                    {
+                        "class": "InlineJavascriptRequirement"
+                    }
+                ],
+                "hints": {
+                    "ResourceRequirement": {
+                        "coresMin": 1,
+                        "ramMin": 1240
+                    },
+                    "DockerRequirement": {
+                        "dockerPull": "i3sbioinformaticsservice/biobambam2:2.0.180"
+                    }
+                },
+                "baseCommand": [
+                    "bamsormadup"
+                ],
+                "arguments": [
+                    {
+                        "valueFrom": "$(inputs.threads)",
+                        "separate": false,
+                        "prefix": "threads="
+                    }
+                ],
+                "stdin": "$(inputs.input_file.path)",
+                "inputs": [
+                    {
+                        "doc": "Input file",
+                        "type": "File",
+                        "id": "input_file"
+                    },
+                    {
+                        "doc": "Set compression level of the output BAM file",
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "default": 6,
+                        "inputBinding": {
+                            "separate": false,
+                            "prefix": "level="
+                        },
+                        "id": "compression_level"
+                    },
+                    {
+                        "doc": "set the input file format",
+                        "type": [
+                            "null",
+                            {
+                                "type": "enum",
+                                "symbols": [
+                                    "sam",
+                                    "bam"
+                                ]
+                            }
+                        ],
+                        "default": "bam",
+                        "inputBinding": {
+                            "separate": false,
+                            "prefix": "inputformat="
+                        },
+                        "id": "input_format"
+                    },
+                    {
+                        "doc": "Specify number of threads",
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "default": 1,
+                        "id": "threads"
+                    },
+                    {
+                        "doc": "name of the metrics file for duplicate marking",
+                        "type": [
+                            "null",
+                            "File"
+                        ],
+                        "inputBinding": {
+                            "separate": false,
+                            "prefix": "M="
+                        },
+                        "id": "metrics_file"
+                    },
+                    {
+                        "doc": "Set the sort order",
+                        "type": [
+                            "null",
+                            {
+                                "type": "enum",
+                                "symbols": [
+                                    "coordinate",
+                                    "queryname"
+                                ]
+                            }
+                        ],
+                        "default": "coordinate",
+                        "inputBinding": {
+                            "separate": false,
+                            "prefix": "SO="
+                        },
+                        "id": "sort_order"
+                    },
+                    {
+                        "doc": "name of reference Fasta file when writing into CRAM format.",
+                        "type": [
+                            "null",
+                            "File"
+                        ],
+                        "inputBinding": {
+                            "separate": false,
+                            "prefix": "reference="
+                        },
+                        "id": "referece_file"
+                    },
+                    {
+                        "doc": "Output format",
+                        "type": [
+                            "null",
+                            {
+                                "type": "enum",
+                                "symbols": [
+                                    "sam",
+                                    "bam",
+                                    "cram"
+                                ]
+                            }
+                        ],
+                        "default": "bam",
+                        "inputBinding": {
+                            "separate": false,
+                            "prefix": "outputformat="
+                        },
+                        "id": "output_format"
+                    }
+                ],
+                "stdout": "$(inputs.input_file.nameroot + \"_sortMrkdup.bam\")",
+                "outputs": [
+                    {
+                        "type": "stdout",
+                        "id": "bam_srt_mrkdup"
+                    }
+                ]
+            },
+            "label": "Sort by coordinate and Mark duplicates",
+            "in": [
+                {
+                    "source": "merge_runs/bam_merged",
+                    "id": "input_file"
+                },
+                {
+                    "default": "bam",
+                    "id": "input_format"
+                },
+                {
+                    "source": "threads",
+                    "id": "threads"
+                },
+                {
+                    "default": "coordinate",
+                    "id": "sort_order"
+                },
+                {
+                    "default": "bam",
+                    "id": "output_format"
+                }
+            ],
+            "out": [
+                "bam_srt_mrkdup"
+            ],
+            "id": "sort_and_markdup"
+        },
+        {
+            "run": {
+                "cwlVersion": "v1.0",
+                "class": "CommandLineTool",
+                "requirements": [
+                    {
+                        "class": "InlineJavascriptRequirement"
+                    }
+                ],
+                "hints": [
+                    {
+                        "class": "DockerRequirement",
+                        "dockerPull": "pegi3s/gatk-4:4.1.4.1"
+                    }
+                ],
+                "inputs": [
+                    {
+                        "type": "File",
+                        "inputBinding": {
+                            "prefix": "-I"
+                        },
+                        "id": "input_file"
+                    },
+                    {
+                        "type": "File",
+                        "inputBinding": {
+                            "prefix": "-R"
+                        },
+                        "secondaryFiles": [
+                            "^.dict"
+                        ],
+                        "id": "genome_reference"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "string"
+                        ],
+                        "default": "recal_data.table",
+                        "inputBinding": {
+                            "prefix": "--output"
+                        },
+                        "id": "output_name"
+                    },
+                    {
+                        "type": {
+                            "type": "array",
+                            "items": "File"
+                        },
+                        "secondaryFiles": ".tbi",
+                        "id": "KnownSites"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            {
+                                "type": "array",
+                                "items": "string"
+                            }
+                        ],
+                        "inputBinding": {
+                            "prefix": "--covariate"
+                        },
+                        "id": "Covariates"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--indels_context_size"
+                        },
+                        "id": "IndelsContextSize"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--maximum_cycle_value"
+                        },
+                        "id": "MaximumCycleValue"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--mismatches_context_size"
+                        },
+                        "id": "MismatchesContextSize"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            {
+                                "type": "enum",
+                                "symbols": [
+                                    "THROW_EXCEPTION",
+                                    "LEAVE_READ_UNRECALIBRATED",
+                                    "PURGE_READ"
+                                ]
+                            }
+                        ],
+                        "inputBinding": {
+                            "prefix": "--solid_nocall_strategy"
+                        },
+                        "id": "SolidNoCallStrategy"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            {
+                                "type": "enum",
+                                "symbols": [
+                                    "DO_NOTHING",
+                                    "SET_Q_ZERO",
+                                    "SET_Q_ZERO_BASE_N",
+                                    "REMOVE_REF_BIAS"
+                                ]
+                            }
+                        ],
+                        "inputBinding": {
+                            "prefix": "--solid_recal_mode"
+                        },
+                        "id": "SolidRecalMode"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--list"
+                        },
+                        "id": "isListCovariates"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--lowMemoryMode"
+                        },
+                        "id": "isLowMemoryMode"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--sort_by_all_columns"
+                        },
+                        "id": "isSortAllColumns"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "string"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--binary_tag_name"
+                        },
+                        "id": "BinaryTagName"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "float"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--bqsrBAQGapOpenPenalty"
+                        },
+                        "id": "bqsrBAQGapOpenPenalty"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--deletions_default_quality"
+                        },
+                        "id": "DeletionsDefaultQuality"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--insertions_default_quality"
+                        },
+                        "id": "InsertionsDefaultQuality"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--low_quality_tail"
+                        },
+                        "id": "LowQualityTail"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--mismatches_default_quality"
+                        },
+                        "id": "MismatchesDefaultQuality"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--quantizing_levels"
+                        },
+                        "id": "QuantizingLevels"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--run_without_dbsnp_potentially_ruining_quality"
+                        },
+                        "id": "RunWithoutdbSNP"
+                    }
+                ],
+                "arguments": [
+                    {
+                        "valueFrom": "BaseRecalibrator",
+                        "position": -1
+                    },
+                    {
+                        "valueFrom": "${\n  var flist= [];\n  flist[0] = \"--known-sites\";\n  flist[1] = inputs.KnownSites[0];\n  for (var i=1; i < inputs.KnownSites.length; i++) {\n    flist[i*2] = \"--known-sites\";\n    flist[(i*2)+1] = inputs.KnownSites[i];\n  }\n  return flist;\n}\n",
+                        "position": 1
+                    }
+                ],
+                "baseCommand": [
+                    "gatk"
+                ],
+                "outputs": [
+                    {
+                        "type": "File",
+                        "outputBinding": {
+                            "glob": "$(inputs.output_name)"
+                        },
+                        "id": "table"
+                    }
+                ]
+            },
+            "label": "GATK Base quality score recalibration",
+            "in": [
+                {
+                    "source": "sort_and_markdup/bam_srt_mrkdup",
+                    "id": "input_file"
+                },
+                {
+                    "source": "genome_index",
+                    "id": "genome_reference"
+                },
+                {
+                    "default": "recal_data.table",
+                    "id": "output_name"
+                },
+                {
+                    "source": "known_sites",
+                    "id": "KnownSites"
+                }
+            ],
+            "out": [
+                "table"
+            ],
+            "id": "base_quality_score"
+        },
+        {
+            "run": {
+                "cwlVersion": "v1.0",
+                "class": "CommandLineTool",
+                "requirements": [
+                    {
+                        "class": "InlineJavascriptRequirement"
+                    }
+                ],
+                "hints": [
+                    {
+                        "class": "DockerRequirement",
+                        "dockerPull": "pegi3s/gatk-4:4.1.4.1"
+                    }
+                ],
+                "inputs": [
+                    {
+                        "type": "File",
+                        "inputBinding": {
+                            "prefix": "--input"
+                        },
+                        "id": "input_file"
+                    },
+                    {
+                        "type": "string",
+                        "inputBinding": {
+                            "prefix": "--output",
+                            "valueFrom": "$(self + \"_recal.bam\")"
+                        },
+                        "id": "output_name"
+                    },
+                    {
+                        "type": "File",
+                        "inputBinding": {
+                            "prefix": "--bqsr-recal-file"
+                        },
+                        "id": "BaseRecalFile"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--add-output-sam-program-record"
+                        },
+                        "id": "isOutputSamProgramRecord"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--add-output-vcf-command-line"
+                        },
+                        "id": "isOutputVCFCommandLine"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "File"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--arguments_file"
+                        },
+                        "id": "ArgumentsFile"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--cloud-index-prefetch-buffer"
+                        },
+                        "id": "CloudIndexPrefetchBuilder"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--cloud-prefetch-buffer"
+                        },
+                        "id": "CloudPrefetchBuffer"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--create-output-bam-index"
+                        },
+                        "id": "isCreateBamIndex"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--create-output-bam-md5"
+                        },
+                        "id": "isCreateMD5"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--create-output-variant-index"
+                        },
+                        "id": "isCreateOutputVariantIndex"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--create-output-variant-md5"
+                        },
+                        "id": "isCreateOutputVariantMD5"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--disable-bam-index-caching"
+                        },
+                        "id": "isDisableBamIndexCaching"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--disable-read-filter"
+                        },
+                        "id": "isDisableReadFilter"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--disable-sequence-dictionary-validation"
+                        },
+                        "id": "isDisableSequenceDictionaryValidation"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--disable-tool-default-read-filters"
+                        },
+                        "id": "isDisableToolDefaultReadFilters"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--emit-original-quals"
+                        },
+                        "id": "isEmitOriginalQuals"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            {
+                                "type": "array",
+                                "items": "string",
+                                "inputBinding": {
+                                    "prefix": "--exclude-intervals"
+                                }
+                            },
+                            "File"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--exclude-intervals"
+                        },
+                        "id": "ExcludeIntervals"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "File"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--gatk-config-file"
+                        },
+                        "id": "GatkConfigFile"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--gcs-max-retries"
+                        },
+                        "id": "GCSMaxRetries"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "double"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--global-qscore-prior"
+                        },
+                        "id": "GlobalScopePrior"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--interval-exclusion-padding"
+                        },
+                        "id": "IntervalExclusionPadding"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            {
+                                "type": "enum",
+                                "symbols": [
+                                    "ALL",
+                                    "OVERLAPPING_ONLY"
+                                ]
+                            }
+                        ],
+                        "inputBinding": {
+                            "prefix": "--interval-merging-rule"
+                        },
+                        "id": "IntervalMergingRule"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--interval-padding"
+                        },
+                        "id": "IntervalPadding"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            {
+                                "type": "enum",
+                                "symbols": [
+                                    "UNION",
+                                    "INTERSECTION"
+                                ]
+                            }
+                        ],
+                        "id": "IntervalSetRule"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            {
+                                "type": "array",
+                                "items": "string"
+                            }
+                        ],
+                        "inputBinding": {
+                            "prefix": "--intervals"
+                        },
+                        "id": "Intervals"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "string"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--java_options",
+                            "position": -2
+                        },
+                        "id": "JavaOptions"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--lenient"
+                        },
+                        "id": "isLenient"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--preserve-qscores-less-than"
+                        },
+                        "id": "PreserveQscoresLessThan"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            {
+                                "type": "record",
+                                "name": "QuantizeQuals",
+                                "fields": [
+                                    {
+                                        "type": "int",
+                                        "inputBinding": {
+                                            "prefix": "--quantize-quals"
+                                        },
+                                        "name": "QuantizeQuals"
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "record",
+                                "name": "RoundDownQuantize",
+                                "fields": [
+                                    {
+                                        "type": [
+                                            "null",
+                                            "boolean"
+                                        ],
+                                        "inputBinding": {
+                                            "prefix": "--round-down-quantized"
+                                        },
+                                        "name": "RoundDownQuantize"
+                                    },
+                                    {
+                                        "type": [
+                                            "null",
+                                            "boolean"
+                                        ],
+                                        "inputBinding": {
+                                            "prefix": "--static-quantized-quals"
+                                        },
+                                        "name": "StaticQuantizedQuals"
+                                    }
+                                ]
+                            }
+                        ],
+                        "id": "QuantizeQuals"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            {
+                                "type": "array",
+                                "items": "string"
+                            }
+                        ],
+                        "inputBinding": {
+                            "prefix": "--read-filter",
+                            "itemSeparator": ","
+                        },
+                        "id": "ReadFilter"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            {
+                                "type": "array",
+                                "items": "string"
+                            }
+                        ],
+                        "inputBinding": {
+                            "prefix": "--read-index",
+                            "itemSeparator": ","
+                        },
+                        "id": "ReadIndex"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            {
+                                "type": "enum",
+                                "symbols": [
+                                    "STRICT",
+                                    "LENIENT",
+                                    "SILENT"
+                                ]
+                            }
+                        ],
+                        "inputBinding": {
+                            "prefix": "--read-validation-stringency"
+                        },
+                        "id": "ReadValidationStringency"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "string"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--reference"
+                        },
+                        "id": "Reference"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--seconds-between-progress-updates"
+                        },
+                        "id": "SecondsBetweenProgUpdates"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "File"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--sequence-dictionary"
+                        },
+                        "id": "SequenceDictionary"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--use-original-qualities"
+                        },
+                        "id": "isUseOriginalQualities"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--USE_JDK_DEFLATER"
+                        },
+                        "id": "isJDKDeflator"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "boolean"
+                        ],
+                        "inputBinding": {
+                            "prefix": "--USE_JDK_INFLATER"
+                        },
+                        "id": "isJDKInflator"
+                    }
+                ],
+                "baseCommand": [
+                    "gatk"
+                ],
+                "arguments": [
+                    {
+                        "valueFrom": "ApplyBQSR",
+                        "position": -1
+                    }
+                ],
+                "outputs": [
+                    {
+                        "type": "File",
+                        "outputBinding": {
+                            "glob": "$(inputs.output_name)_recal.bam"
+                        },
+                        "id": "recalibrated_bam"
+                    }
+                ]
+            },
+            "label": "Apply Base Quality Scores",
+            "in": [
+                {
+                    "source": "sort_and_markdup/bam_srt_mrkdup",
+                    "id": "input_file"
+                },
+                {
+                    "source": "sort_and_markdup/bam_srt_mrkdup",
+                    "valueFrom": "${return self.nameroot;}",
+                    "id": "output_name"
+                },
+                {
+                    "source": "base_quality_score/table",
+                    "id": "BaseRecalFile"
+                },
+                {
+                    "default": true,
+                    "id": "isCreateBamIndex"
+                }
+            ],
+            "out": [
+                "recalibrated_bam"
+            ],
+            "id": "apply_quality_score"
+        },
+        {
+            "run": {
+                "class": "Workflow",
+                "cwlVersion": "v1.0",
+                "id": "quality statistics",
+                "doc": "Calculates different and plots different alignment metrics",
+                "label": "DNA quality statistics",
+                "requirements": [
+                    {
+                        "class": "InlineJavascriptRequirement"
+                    },
+                    {
+                        "class": "StepInputExpressionRequirement"
+                    },
+                    {
+                        "class": "SubworkflowFeatureRequirement"
+                    }
+                ],
+                "inputs": [
+                    {
+                        "type": "File",
+                        "id": "input_file"
+                    },
+                    {
+                        "type": "File",
+                        "id": "target_regions"
+                    },
+                    {
+                        "type": [
+                            "null",
+                            "int"
+                        ],
+                        "id": "threads"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "outputSource": "samtools_stats/stats",
+                        "type": "File",
+                        "id": "bam_samtools_stats"
+                    },
+                    {
+                        "outputSource": "bamdst_stats/statistics",
+                        "type": "Directory",
+                        "id": "bam_bamdst_stats"
+                    }
+                ],
+                "steps": [
+                    {
+                        "run": {
+                            "cwlVersion": "v1.0",
+                            "class": "CommandLineTool",
+                            "baseCommand": [
+                                "samtools",
+                                "stats"
+                            ],
+                            "hints": [
+                                {
+                                    "class": "DockerRequirement",
+                                    "dockerPull": "i3sbioinformaticsservice/samtools:1.15.1"
+                                }
+                            ],
+                            "inputs": [
+                                {
+                                    "type": "File",
+                                    "inputBinding": {
+                                        "position": 100
+                                    },
+                                    "id": "input_file"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        {
+                                            "type": "record",
+                                            "name": "coverage_parameters",
+                                            "fields": [
+                                                {
+                                                    "type": "int",
+                                                    "name": "min_cov"
+                                                },
+                                                {
+                                                    "type": "int",
+                                                    "name": "max_cov"
+                                                },
+                                                {
+                                                    "type": "int",
+                                                    "name": "step_cov"
+                                                }
+                                            ]
+                                        }
+                                    ],
+                                    "inputBinding": {
+                                        "prefix": "--coverage"
+                                    },
+                                    "doc": "Set coverage distribution to the specified range (MIN, MAX, STEP all given as integers) [1,1000,1]",
+                                    "id": "coverage"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "boolean"
+                                    ],
+                                    "doc": "Exclude from statistics reads marked as duplicates",
+                                    "inputBinding": {
+                                        "prefix": "--remove_dups"
+                                    },
+                                    "id": "remove_dups"
+                                },
+                                {
+                                    "type": [
+                                        "string",
+                                        "int",
+                                        "null"
+                                    ],
+                                    "default": 0,
+                                    "doc": " STR|INT Required flag, 0 for unset. See also `samtools flags` [0] ",
+                                    "inputBinding": {
+                                        "prefix": "-f"
+                                    },
+                                    "id": "required_flag"
+                                },
+                                {
+                                    "type": [
+                                        "string",
+                                        "int",
+                                        "null"
+                                    ],
+                                    "default": 0,
+                                    "doc": "STR|INT Filtering flag, 0 for unset. See also `samtools flags` [0] ",
+                                    "inputBinding": {
+                                        "prefix": "-F"
+                                    },
+                                    "id": "filtering_flag"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "float"
+                                    ],
+                                    "doc": "the size of GC-depth bins (decreasing bin size increases memory requirement) [2e4] ",
+                                    "inputBinding": {
+                                        "prefix": "--GC-depth"
+                                    },
+                                    "id": "GC_depth"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "doc": "Maximum insert size [8000]",
+                                    "inputBinding": {
+                                        "prefix": "-i"
+                                    },
+                                    "id": "max_insert_size"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "string"
+                                    ],
+                                    "doc": "Include only listed read group or sample name [] ",
+                                    "inputBinding": {
+                                        "prefix": "--id"
+                                    },
+                                    "id": "listed_group"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "doc": "Include in the statistics only reads with the given read length [-1]",
+                                    "inputBinding": {
+                                        "prefix": "-l"
+                                    },
+                                    "id": "read_length"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "float"
+                                    ],
+                                    "doc": "Report only the main part of inserts [0.99] ",
+                                    "inputBinding": {
+                                        "prefix": "-m"
+                                    },
+                                    "id": "most_inserts"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "string"
+                                    ],
+                                    "doc": "A path or string prefix to prepend to filenames output when creating categorised statistics files with -S/--split. [input filename]",
+                                    "inputBinding": {
+                                        "prefix": "-P"
+                                    },
+                                    "id": "split_prefix"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "doc": "The BWA trimming parameter [0] ",
+                                    "inputBinding": {
+                                        "prefix": "-q"
+                                    },
+                                    "id": "trim_quality"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "doc": "Reference sequence (required for GC-depth and mismatches-per-cycle calculation). [] ",
+                                    "inputBinding": {
+                                        "prefix": "-r"
+                                    },
+                                    "id": "ref_seq"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "string"
+                                    ],
+                                    "doc": "In addition to the complete statistics, also output categorised statistics based on the tagged field TAG (e.g., use --split RG to split into read groups).    Categorised statistics are written to files named <prefix>_<value>.bamstat, where prefix is as given by --split-prefix (or the input filename by default) and value has been encountered as the specified tagged field's value in one or more alignment records. ",
+                                    "inputBinding": {
+                                        "prefix": "--split"
+                                    },
+                                    "id": "split"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "File"
+                                    ],
+                                    "doc": "Do stats in these regions only. Tab-delimited file chr,from,to, 1-based, inclusive. []",
+                                    "inputBinding": {
+                                        "prefix": "--target-regions"
+                                    },
+                                    "id": "target_regions"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "boolean"
+                                    ],
+                                    "doc": "Suppress outputting IS rows where there are no insertions.",
+                                    "inputBinding": {
+                                        "prefix": "--sparse"
+                                    },
+                                    "id": "sparse"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "boolean"
+                                    ],
+                                    "doc": "Remove overlaps of paired-end reads from coverage and base count computations. ",
+                                    "inputBinding": {
+                                        "prefix": "--remove-overlaps"
+                                    },
+                                    "id": "remove_overlaps"
+                                },
+                                {
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "doc": "Only bases with coverage above this value will be included in the target percentage computation [0] ",
+                                    "inputBinding": {
+                                        "prefix": "-g"
+                                    },
+                                    "id": "cov_threshold"
+                                }
+                            ],
+                            "arguments": [
+                                {
+                                    "prefix": "--threads",
+                                    "valueFrom": "$(runtime.cores)"
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "type": "File",
+                                    "outputBinding": {
+                                        "glob": "$(inputs.input_file.nameroot).stats.txt"
+                                    },
+                                    "id": "stats"
+                                }
+                            ],
+                            "stdout": "$(inputs.input_file.nameroot).stats.txt",
+                            "requirements": []
+                        },
+                        "label": "Samtools stats",
+                        "in": [
+                            {
+                                "source": "input_file",
+                                "id": "input_file"
+                            }
+                        ],
+                        "out": [
+                            "stats"
+                        ],
+                        "id": "samtools_stats"
+                    },
+                    {
+                        "run": {
+                            "cwlVersion": "v1.0",
+                            "class": "CommandLineTool",
+                            "doc": "Bamdst is a lightweight tool to stat the depth coverage of target regions of bam file(s).\n",
+                            "requirements": [
+                                {
+                                    "class": "InlineJavascriptRequirement"
+                                },
+                                {
+                                    "dockerPull": "i3sbioinformaticsservice/bamdst:1.0.9",
+                                    "class": "DockerRequirement"
+                                },
+                                {
+                                    "listing": [
+                                        {
+                                            "entry": "$({class: 'Directory', listing: []})",
+                                            "entryname": "$(inputs.output_folder)",
+                                            "writable": true
+                                        }
+                                    ],
+                                    "class": "InitialWorkDirRequirement"
+                                }
+                            ],
+                            "baseCommand": [
+                                "bamdst"
+                            ],
+                            "inputs": [
+                                {
+                                    "doc": "Sorted bam file",
+                                    "type": "File",
+                                    "inputBinding": {
+                                        "position": 100
+                                    },
+                                    "id": "input_file"
+                                },
+                                {
+                                    "doc": "Output folder name",
+                                    "type": [
+                                        "null",
+                                        "string"
+                                    ],
+                                    "default": "bamdst_stats",
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-o"
+                                    },
+                                    "id": "output_folder"
+                                },
+                                {
+                                    "doc": "probe or target regions file, the region file will\nbe merged before calculate depths\n",
+                                    "type": "File",
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-p"
+                                    },
+                                    "id": "target_regions"
+                                },
+                                {
+                                    "doc": "flank n bp of each region",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-f"
+                                    },
+                                    "id": "flank"
+                                },
+                                {
+                                    "doc": "map quality cutoff value, greater or equal to the value will be count",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "default": 20,
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-q"
+                                    },
+                                    "id": "quality_cutoff"
+                                },
+                                {
+                                    "doc": "set the max depth to stat the cumu distribution.",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "default": 0,
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "--maxdepth"
+                                    },
+                                    "id": "max_depth"
+                                },
+                                {
+                                    "doc": "list the coverage of above depths",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "default": 0,
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "--cutoffdepth"
+                                    },
+                                    "id": "cutoff_depth"
+                                },
+                                {
+                                    "doc": "inferred insert size under this value",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "default": 2000,
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "--isize"
+                                    },
+                                    "id": "isize"
+                                },
+                                {
+                                    "doc": "region will included in uncover file if below it",
+                                    "type": [
+                                        "null",
+                                        "int"
+                                    ],
+                                    "default": 5,
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "--uncover"
+                                    },
+                                    "id": "uncover"
+                                },
+                                {
+                                    "doc": "begin position of bed file is 1-based",
+                                    "type": [
+                                        "null",
+                                        "boolean"
+                                    ],
+                                    "default": false,
+                                    "inputBinding": {
+                                        "position": 1,
+                                        "prefix": "-1"
+                                    },
+                                    "id": "one_based"
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "type": "Directory",
+                                    "outputBinding": {
+                                        "glob": "$(inputs.output_folder)"
+                                    },
+                                    "id": "statistics"
+                                }
+                            ]
+                        },
+                        "label": "generates alignment statistics",
+                        "in": [
+                            {
+                                "source": "input_file",
+                                "id": "input_file"
+                            },
+                            {
+                                "source": "target_regions",
+                                "id": "target_regions"
+                            }
+                        ],
+                        "out": [
+                            "statistics"
+                        ],
+                        "id": "bamdst_stats"
+                    }
+                ]
+            },
+            "label": "Quality control statistics of the alignment step",
+            "in": [
+                {
+                    "source": "apply_quality_score/recalibrated_bam",
+                    "id": "input_file"
+                },
+                {
+                    "source": "threads",
+                    "id": "threads"
+                },
+                {
+                    "source": "target_regions",
+                    "id": "target_regions"
+                }
+            ],
+            "out": [
+                "bam_samtools_stats",
+                "bam_bamdst_stats"
+            ],
+            "id": "aln_quality_control"
+        }
+    ]
+}
